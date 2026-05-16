@@ -28,6 +28,24 @@ export interface AuditEvent {
   itemIdHash?: string;
   /** Truncated SHA-256 of `args.accountId`, when present. */
   accountIdHash?: string;
+  /** Truncated SHA-256 of `args.consentId`, when present. */
+  consentIdHash?: string;
+  /** Truncated SHA-256 of `args.transactionId`, when present. */
+  transactionIdHash?: string;
+  /** Truncated SHA-256 of `args.categoryId`, when present. */
+  categoryIdHash?: string;
+  /** Truncated SHA-256 of `args.billId`, when present. */
+  billIdHash?: string;
+  /** Truncated SHA-256 of `args.loanId`, when present. */
+  loanIdHash?: string;
+  /** Truncated SHA-256 of `args.investmentId`, when present. */
+  investmentIdHash?: string;
+  /** Truncated SHA-256 of `args.identityId`, when present. */
+  identityIdHash?: string;
+  /** Truncated SHA-256 of `args.from`, when present (transactions date range). */
+  fromHash?: string;
+  /** Truncated SHA-256 of `args.to`, when present (transactions date range). */
+  toHash?: string;
   /** True for tools that expose unmasked PII on success. */
   sensitive?: boolean;
   /** Correlation id from the error path, when available. */
@@ -116,6 +134,15 @@ export function audit(ev: AuditEvent): void {
       argsHash: ev.argsHash,
       itemIdHash: ev.itemIdHash,
       accountIdHash: ev.accountIdHash,
+      consentIdHash: ev.consentIdHash,
+      transactionIdHash: ev.transactionIdHash,
+      categoryIdHash: ev.categoryIdHash,
+      billIdHash: ev.billIdHash,
+      loanIdHash: ev.loanIdHash,
+      investmentIdHash: ev.investmentIdHash,
+      identityIdHash: ev.identityIdHash,
+      fromHash: ev.fromHash,
+      toHash: ev.toHash,
       sensitive: ev.sensitive,
       requestId: ev.requestId,
       rateLimitReason: ev.rateLimitReason,
