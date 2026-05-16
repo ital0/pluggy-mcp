@@ -49,7 +49,8 @@
  * redactors are the public surface and document each policy individually.
  */
 function maskLast4(value: string, noDigitsFallback: string): string {
-  const digits = value.replace(/\D/g, '');
+  // NFKC normalize: collapse Unicode digits (fullwidth, Arabic-Indic) to ASCII before stripping.
+  const digits = value.normalize('NFKC').replace(/\D/g, '');
   if (digits.length === 0) return noDigitsFallback;
   return `****${digits.slice(-4)}`;
 }
@@ -70,7 +71,8 @@ export function redactCpf(cpf?: string | null): string | null {
   if (cpf === null || cpf === undefined) return null;
   if (cpf === '') return cpf;
 
-  const digits = cpf.replace(/\D/g, '');
+  // NFKC normalize: collapse Unicode digits (fullwidth, Arabic-Indic) to ASCII before stripping.
+  const digits = cpf.normalize('NFKC').replace(/\D/g, '');
   if (digits.length !== 11) {
     // Not a valid-length CPF (or an already-masked value with most digits
     // stripped) — fully mask. Keeps the function idempotent on its own
@@ -237,7 +239,8 @@ export function redactPhone(phone?: string | null): string | null {
 export function redactBoletoLine(line?: string | null): string | null {
   if (line === null || line === undefined) return null;
   if (line === '') return line;
-  const digits = line.replace(/\D/g, '');
+  // NFKC normalize: collapse Unicode digits (fullwidth, Arabic-Indic) to ASCII before stripping.
+  const digits = line.normalize('NFKC').replace(/\D/g, '');
   if (digits.length === 0) return '****';
   return `****${digits.slice(-6)}`;
 }
