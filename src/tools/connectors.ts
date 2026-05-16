@@ -111,7 +111,7 @@ export function registerListConnectorsTool(server: McpServer): void {
         const sec = loadSecurityConfig();
         const rl = sec.rateLimit
           ? checkRateLimit('listConnectors')
-          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
+          : { allowed: true as const };
         if (!rl.allowed) {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
@@ -286,7 +286,7 @@ export function registerGetConnectorTool(server: McpServer): void {
         const sec = loadSecurityConfig();
         const rl = sec.rateLimit
           ? checkRateLimit(toolName)
-          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
+          : { allowed: true as const };
         if (!rl.allowed) {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';

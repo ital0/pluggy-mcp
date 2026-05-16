@@ -435,7 +435,7 @@ export function registerListTransactionsTool(server: McpServer): void {
         const sec = loadSecurityConfig();
         const rl = sec.rateLimit
           ? checkRateLimit(toolName)
-          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
+          : { allowed: true as const };
         if (!rl.allowed) {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
@@ -617,7 +617,7 @@ export function registerGetTransactionTool(server: McpServer): void {
         const sec = loadSecurityConfig();
         const rl = sec.rateLimit
           ? checkRateLimit(toolName)
-          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
+          : { allowed: true as const };
         if (!rl.allowed) {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
