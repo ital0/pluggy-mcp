@@ -142,6 +142,9 @@ export function registerGetRecurringPaymentsTool(server: McpServer): void {
       let errorCode: string | undefined;
       let requestId: string | undefined;
       let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
+      // Subscription/vendor data is financial-behavior PII — flip sensitive
+      // ONLY when we actually hit the upstream. Gate denials stay false.
+      let sensitive = false;
       try {
         const sec = loadSecurityConfig();
         const rl = sec.rateLimit
@@ -178,6 +181,7 @@ export function registerGetRecurringPaymentsTool(server: McpServer): void {
           };
         }
 
+        sensitive = true;
         const raw = await pluggyRawFetch(
           ENRICHMENT_RECURRING_URL,
           'POST',
@@ -224,6 +228,7 @@ export function registerGetRecurringPaymentsTool(server: McpServer): void {
           errorCode,
           durationMs: Math.round(performance.now() - start),
           ...hashArgsSafely({ itemId }, ['itemId']),
+          sensitive,
           requestId,
           rateLimitReason,
         });
@@ -321,6 +326,9 @@ export function registerGetInsightsBookTool(server: McpServer): void {
       let errorCode: string | undefined;
       let requestId: string | undefined;
       let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
+      // Income / cash-flow aggregates are financial-behavior PII — flip
+      // sensitive ONLY when we actually hit the upstream.
+      let sensitive = false;
       try {
         const sec = loadSecurityConfig();
         const rl = sec.rateLimit
@@ -373,6 +381,7 @@ export function registerGetInsightsBookTool(server: McpServer): void {
         }
         const url = `${INSIGHTS_BOOK_URL}?${params.toString()}`;
 
+        sensitive = true;
         const raw = await pluggyRawFetch(url, 'POST');
         const result = normalizeInsightsBook(raw);
 
@@ -416,6 +425,7 @@ export function registerGetInsightsBookTool(server: McpServer): void {
           // hash because `itemIds` is an array — `hashArgsSafely`'s
           // per-field branch only hashes string fields.
           ...hashArgsSafely(args, []),
+          sensitive,
           requestId,
           rateLimitReason,
         });
