@@ -215,7 +215,9 @@ function mapInvestment(
     itemId: i.itemId,
     type: i.type,
     subtype: i.subtype,
-    name: wrapUntrusted(i.name) as string,
+    // Explicit null guard instead of `as string` — same posture as
+    // `loans.ts:mapLoan.productName`.
+    name: i.name != null ? (wrapUntrusted(i.name) ?? '') : '',
     currencyCode: i.currencyCode,
     date: dateToIso(i.date),
     value: i.value,

@@ -268,7 +268,11 @@ function mapLoan(l: LoanLike): z.infer<typeof LoanSchema> {
     // shaped like a contract number.
     contractNumber: wrapUntrusted(l.contractNumber),
     ipocCode: wrapUntrusted(l.ipocCode),
-    productName: wrapUntrusted(l.productName) as string,
+    // Explicit null guard instead of `as string` — `productName` is
+    // non-null per the SDK shape, but we don't want to lie to the
+    // type system through a cast that would silently produce
+    // `undefined` if the upstream ever stops sending the field.
+    productName: l.productName != null ? (wrapUntrusted(l.productName) ?? '') : '',
     type: l.type,
     date: dateToIso(l.date),
     contractDate: dateToIso(l.contractDate),
