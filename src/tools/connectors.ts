@@ -4,9 +4,20 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { loadSecurityConfig } from '../config.js';
+import { logEvent } from '../util/log.js';
+import {
+  audit,
+  checkRateLimit,
+  hashArgsSafely,
+  wrapUntrusted,
+  UNTRUSTED_PREAMBLE,
+  LOCAL_RATE_LIMITED_MESSAGE,
+} from '../security/index.js';
 
 // Subset of the SDK's Connector shape — we expose only stable fields that
 // are useful for an LLM picking a connector. The SDK adds new optional
@@ -73,6 +84,8 @@ export function registerListConnectorsTool(server: McpServer): void {
     'listConnectors',
     {
       description:
+        UNTRUSTED_PREAMBLE +
+        '\n\n' +
         'List all financial institutions (connectors) available through Pluggy. ' +
         'Use this to discover which banks, brokers, and other institutions a user ' +
         'can link, and to obtain the `connectorId` needed to create an item.',
@@ -89,15 +102,45 @@ export function registerListConnectorsTool(server: McpServer): void {
       },
     },
     async () => {
+      const start = performance.now();
+      let outcome: 'success' | 'error' = 'success';
+      let errorCode: string | undefined;
+      let requestId: string | undefined;
+      let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
       try {
+        const sec = loadSecurityConfig();
+        const rl = sec.rateLimit
+          ? checkRateLimit('listConnectors')
+          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
+        if (!rl.allowed) {
+          outcome = 'error';
+          errorCode = 'LOCAL_RATE_LIMITED';
+          rateLimitReason = rl.reason;
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'LOCAL_RATE_LIMITED' as const,
+            message: LOCAL_RATE_LIMITED_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
+          };
+        }
+
         const client = getPluggyClient();
         const page = await client.fetchConnectors();
 
         // Re-shape into our outputSchema — the SDK may add fields we don't
-        // currently advertise; only forward what we documented.
+        // currently advertise; only forward what we documented. We wrap
+        // the free-text `name` in `<untrusted>` delimiters: Pluggy
+        // controls this string today but it ultimately surfaces an
+        // institution-provided value, and treating it as data — not
+        // instructions — is the safe posture. Other connector fields
+        // are URLs / hex colors / enums and don't need wrapping.
         const connectors = page.results.map((c) => ({
           id: c.id,
-          name: c.name,
+          name: wrapUntrusted(c.name) ?? c.name,
           institutionUrl: c.institutionUrl,
           imageUrl: c.imageUrl,
           primaryColor: c.primaryColor,
@@ -124,15 +167,11 @@ export function registerListConnectorsTool(server: McpServer): void {
           // Signal to operators that pagination is missing — the LLM also
           // sees `truncated: true` in structuredContent (full pagination
           // ships in PR3+).
-          console.error(
-            JSON.stringify({
-              ts: new Date().toISOString(),
-              tool: 'listConnectors',
-              event: 'truncated',
-              total,
-              returned: connectors.length,
-            }),
-          );
+          logEvent('truncated', {
+            tool: 'listConnectors',
+            total,
+            returned: connectors.length,
+          });
         }
 
         const output = {
@@ -154,10 +193,13 @@ export function registerListConnectorsTool(server: McpServer): void {
           ],
         };
       } catch (err) {
+        outcome = 'error';
         const safe = classifyAndReport(err, {
           tool: 'listConnectors',
           operation: 'fetchConnectors',
         });
+        errorCode = safe.errorCode;
+        requestId = safe.requestId;
         // Must include `structuredContent` even on errors when an
         // `outputSchema` is declared — the SDK throws McpError otherwise.
         const errorOutput = {
@@ -171,6 +213,18 @@ export function registerListConnectorsTool(server: McpServer): void {
           structuredContent: errorOutput,
           content: [{ type: 'text' as const, text: safe.message }],
         };
+      } finally {
+        audit({
+          tool: 'listConnectors',
+          outcome,
+          errorCode,
+          durationMs: Math.round(performance.now() - start),
+          // No-arg tool — `hashArgsSafely({}, [])` produces a stable empty
+          // fingerprint without leaking any field names.
+          ...hashArgsSafely({}, []),
+          requestId,
+          rateLimitReason,
+        });
       }
     },
   );

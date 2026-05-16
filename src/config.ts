@@ -8,11 +8,39 @@
  */
 
 import 'dotenv/config';
+import { logEvent } from './util/log.js';
 
 export type PluggyConfig = {
   clientId: string;
   clientSecret: string;
 };
+
+/**
+ * Server-wide security toggles. All default ON; operators opt OUT
+ * explicitly via env. We surface them here so call sites can read
+ * `loadSecurityConfig().redact` instead of repeating the `!== 'false'`
+ * comparison and so misspelled env values (`"FALSE"`, `"0"`) don't
+ * silently disable a control.
+ */
+export type SecurityConfig = {
+  redact: boolean;
+  audit: boolean;
+  rateLimit: boolean;
+};
+
+/**
+ * Per-tool rate-limit budgets. Sourced from env so an operator can tune
+ * them without rebuilding; defaults are conservative because the server
+ * fronts a paid upstream API. Invalid or missing values fall back to the
+ * defaults — we never throw at config load.
+ */
+export type RateLimitConfig = {
+  perMinute: number;
+  perDay: number;
+};
+
+const DEFAULT_RATE_LIMIT_PER_MINUTE = 30;
+const DEFAULT_RATE_LIMIT_PER_DAY = 200;
 
 /**
  * Cached config — `loadPluggyConfig` is called from both `main()` (for the
@@ -21,6 +49,8 @@ export type PluggyConfig = {
  * the intent obvious: env is read once per process.
  */
 let cached: PluggyConfig | null = null;
+let cachedSecurity: SecurityConfig | null = null;
+let cachedRateLimit: RateLimitConfig | null = null;
 
 /**
  * Load Pluggy credentials. Returns `null` when either credential is missing
@@ -52,6 +82,92 @@ export function loadPluggyConfig(): PluggyConfig | null {
 
   cached = { clientId, clientSecret };
   return cached;
+}
+
+/**
+ * Read security toggles from the environment. All default ON; the only
+ * way to disable a control is to explicitly set its env var to the
+ * literal string `"false"` (case-sensitive — see comment on `SecurityConfig`).
+ *
+ * Memoized for the same reason as the credentials: env is read once per
+ * process. We do NOT delete the toggle envs after reading — they are not
+ * secrets, and downstream child processes (if any) seeing the same value
+ * is the correct behavior.
+ */
+export function loadSecurityConfig(): SecurityConfig {
+  if (cachedSecurity) return cachedSecurity;
+  cachedSecurity = {
+    redact: process.env.PLUGGY_MCP_REDACT !== 'false',
+    audit: process.env.PLUGGY_MCP_AUDIT !== 'false',
+    rateLimit: process.env.PLUGGY_MCP_RATELIMIT !== 'false',
+  };
+  return cachedSecurity;
+}
+
+/**
+ * Read per-tool rate-limit budgets from `PLUGGY_MCP_RATELIMIT_PER_MIN`
+ * and `PLUGGY_MCP_RATELIMIT_PER_DAY`. Values are parsed as base-10
+ * integers; anything non-positive or non-numeric falls back to the
+ * defaults silently. We deliberately do NOT throw — a typo in env must
+ * not crash the stdio transport at startup.
+ *
+ * Memoized for the same reason as `loadSecurityConfig`: env is a
+ * once-per-process input. Sourcing the budgets here (rather than from
+ * a per-call `opts` arg) ensures every tool sees the same operator
+ * intent — there is no path for a caller to silently widen the limit.
+ */
+export function loadRateLimitConfig(): RateLimitConfig {
+  if (cachedRateLimit) return cachedRateLimit;
+  cachedRateLimit = {
+    perMinute: parsePositiveInt(
+      process.env.PLUGGY_MCP_RATELIMIT_PER_MIN,
+      DEFAULT_RATE_LIMIT_PER_MINUTE,
+    ),
+    perDay: parsePositiveInt(
+      process.env.PLUGGY_MCP_RATELIMIT_PER_DAY,
+      DEFAULT_RATE_LIMIT_PER_DAY,
+    ),
+  };
+  return cachedRateLimit;
+}
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return n;
+}
+
+/**
+ * Emit a single-line summary of the resolved security toggles, plus a
+ * loud warning when redaction is disabled. Called once from `main()`.
+ *
+ * Kept separate from `loadSecurityConfig()` because the loader is also
+ * called from inside tool handlers and we only want the summary once at
+ * startup — not on every tool call.
+ */
+export function logSecurityConfig(): void {
+  const cfg = loadSecurityConfig();
+  logEvent('security_config', {
+    redact: cfg.redact,
+    audit: cfg.audit,
+    rateLimit: cfg.rateLimit,
+  });
+  if (!cfg.redact) {
+    console.error(
+      '[pluggy-mcp] WARN: PII redaction DISABLED — raw CPF/account numbers will reach the LLM context. ' +
+        'Set PLUGGY_MCP_REDACT=true to enable.',
+    );
+  }
+  if (!cfg.audit) {
+    // Sensitive-event audit lines are still emitted unconditionally (see
+    // `audit()` in src/security/audit.ts) — this WARN flags only the
+    // suppression of routine, non-sensitive audit traffic.
+    console.error(
+      '[pluggy-mcp] WARN: audit logging DISABLED — non-sensitive tool calls will not be recorded. ' +
+        'Set PLUGGY_MCP_AUDIT=true to enable. (Sensitive-event audit is unbypassable.)',
+    );
+  }
 }
 
 /**

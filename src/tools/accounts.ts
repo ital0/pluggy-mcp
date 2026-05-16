@@ -1,19 +1,36 @@
 /**
  * `getAccounts` tool — list the bank / credit-card accounts attached to a
  * given Pluggy Item. Read-only: only calls `GET /accounts?itemId=...`.
+ *
+ * PII handling: this tool now exposes the three PII fields the SDK
+ * surfaces (`number`, `owner`, `taxNumber`), but masked by default via
+ * the helpers in `../security/redact`. Operators who explicitly need
+ * unmasked data can either:
+ *   - opt-out per server with `PLUGGY_MCP_REDACT=false` (logs a stderr
+ *     WARN on startup), or
+ *   - call the sibling tool `getRawAccountDetails(accountId)` for a
+ *     single account; every call to that tool is audit-logged.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
-
-// NOTE: PII fields (taxNumber/CPF, owner full name, full account number, email, phone, address)
-// are intentionally omitted from PR1's output. They will be added back in PR2 with proper masking
-// (e.g. taxNumber -> ***.***.***-NN, number -> ****-NNNN, owner -> first name + initial).
-// Per pluggy-sdk types, the only PII fields actually exposed by the Account/BankData/CreditData
-// shapes are `number`, `owner`, and `taxNumber`. Email/phone/address aren't on the SDK type at
-// all, but the omit list above documents intent for PR2.
+import { loadSecurityConfig } from '../config.js';
+import { logEvent } from '../util/log.js';
+import { performance } from 'node:perf_hooks';
+import {
+  redactAccountNumber,
+  redactCpf,
+  redactOwnerName,
+  checkRateLimit,
+  audit,
+  hashArgsSafely,
+  hashForAudit,
+  wrapUntrusted,
+  UNTRUSTED_PREAMBLE,
+  LOCAL_RATE_LIMITED_MESSAGE,
+} from '../security/index.js';
 
 const BankDataSchema = z.object({
   transferNumber: z.string().nullable(),
@@ -46,6 +63,20 @@ const AccountSchema = z.object({
   name: z.string().describe('Account name / description'),
   marketingName: z.string().nullable(),
   currencyCode: z.string().describe('ISO 4217 currency code'),
+  // PII fields — masked by default via the redact helpers. See
+  // `getRawAccountDetails` for the unmasked variant.
+  number: z
+    .string()
+    .nullable()
+    .describe('Account number, masked to last 4 digits unless PLUGGY_MCP_REDACT=false'),
+  owner: z
+    .string()
+    .nullable()
+    .describe('Account holder, masked to first name + initial unless PLUGGY_MCP_REDACT=false'),
+  taxNumber: z
+    .string()
+    .nullable()
+    .describe('Holder CPF, masked to last 2 digits unless PLUGGY_MCP_REDACT=false'),
   bankData: BankDataSchema.nullable(),
   creditData: CreditDataSchema.nullable(),
 });
@@ -79,6 +110,8 @@ export function registerGetAccountsTool(server: McpServer): void {
     'getAccounts',
     {
       description:
+        UNTRUSTED_PREAMBLE +
+        '\n\n' +
         'Retrieve all accounts (bank, credit card, etc.) belonging to a given ' +
         'Pluggy Item. An Item represents one user-institution connection — call ' +
         '`listConnectors` first to discover institutions and create items via the ' +
@@ -98,21 +131,62 @@ export function registerGetAccountsTool(server: McpServer): void {
       },
     },
     async ({ itemId }) => {
+      const start = performance.now();
+      let outcome: 'success' | 'error' = 'success';
+      let errorCode: string | undefined;
+      let requestId: string | undefined;
+      let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
       try {
+        // Skip the limiter entirely when the operator has disabled it
+        // via `PLUGGY_MCP_RATELIMIT=false`. We still want this branch
+        // present (rather than `if (sec.rateLimit) checkRateLimit(...)`)
+        // because subsequent logic treats `rl.allowed` as the source of
+        // truth and the typed shape stays uniform.
+        const sec = loadSecurityConfig();
+        const rl = sec.rateLimit
+          ? checkRateLimit('getAccounts')
+          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
+        if (!rl.allowed) {
+          outcome = 'error';
+          errorCode = 'LOCAL_RATE_LIMITED';
+          rateLimitReason = rl.reason;
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'LOCAL_RATE_LIMITED' as const,
+            message: LOCAL_RATE_LIMITED_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
+          };
+        }
+
         const client = getPluggyClient();
         const page = await client.fetchAccounts(itemId);
 
-        // Explicit field-by-field mapping: PII fields (number, owner, taxNumber)
-        // are intentionally NOT forwarded — they'll come back in PR2 with masking.
+        // Explicit field-by-field mapping. The three PII fields are run
+        // through the redactor unless the operator has opted out via
+        // `PLUGGY_MCP_REDACT=false` (a startup WARN line is emitted in
+        // that case, see `logSecurityConfig`). Re-using the already-loaded
+        // `sec` from the rate-limit guard above.
+        const { redact } = sec;
+        // Free-text fields (`name`, `marketingName`) come from the bank
+        // and could in theory carry indirect prompt injection. Wrap them
+        // in `<untrusted>` delimiters; identifiers, numbers, and enums
+        // pass through untouched.
         const accounts = page.results.map((a) => ({
           id: a.id,
           itemId: a.itemId,
           type: a.type,
           subtype: a.subtype,
           balance: a.balance,
-          name: a.name,
-          marketingName: a.marketingName,
+          name: wrapUntrusted(a.name) ?? a.name,
+          marketingName: wrapUntrusted(a.marketingName),
           currencyCode: a.currencyCode,
+          number: redact ? redactAccountNumber(a.number) : a.number,
+          owner: redact ? redactOwnerName(a.owner) : a.owner,
+          taxNumber: redact ? redactCpf(a.taxNumber) : a.taxNumber,
           bankData: a.bankData,
           // The SDK returns Date for credit-card balance dates; serialise to
           // ISO strings so the JSON envelope is stable and validates.
@@ -129,16 +203,14 @@ export function registerGetAccountsTool(server: McpServer): void {
         const truncated = total > accounts.length;
 
         if (truncated) {
-          console.error(
-            JSON.stringify({
-              ts: new Date().toISOString(),
-              tool: 'getAccounts',
-              event: 'truncated',
-              itemId,
-              total,
-              returned: accounts.length,
-            }),
-          );
+          // Hashed itemId for consistency with audit events — raw itemIds
+          // don't appear in stderr.
+          logEvent('truncated', {
+            tool: 'getAccounts',
+            itemIdHash: hashForAudit(itemId),
+            total,
+            returned: accounts.length,
+          });
         }
 
         const output = {
@@ -161,10 +233,13 @@ export function registerGetAccountsTool(server: McpServer): void {
           ],
         };
       } catch (err) {
+        outcome = 'error';
         const safe = classifyAndReport(err, {
           tool: 'getAccounts',
           operation: 'fetchAccounts',
         });
+        errorCode = safe.errorCode;
+        requestId = safe.requestId;
         const errorOutput = {
           ok: false as const,
           errorCode: safe.errorCode,
@@ -176,6 +251,187 @@ export function registerGetAccountsTool(server: McpServer): void {
           structuredContent: errorOutput,
           content: [{ type: 'text' as const, text: safe.message }],
         };
+      } finally {
+        audit({
+          tool: 'getAccounts',
+          outcome,
+          errorCode,
+          durationMs: Math.round(performance.now() - start),
+          ...hashArgsSafely({ itemId }, ['itemId']),
+          requestId,
+          rateLimitReason,
+        });
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// getRawAccountDetails
+// ---------------------------------------------------------------------------
+//
+// Sister tool to `getAccounts` that explicitly returns the unmasked PII
+// fields for a single account. Exists so an operator-driven workflow
+// ("show me the full CPF so I can copy it into our backoffice") doesn't
+// have to disable redaction globally — keeping the safe-by-default
+// posture for everything else.
+//
+// Every call is audit-logged with `sensitive: true`. The audit event
+// carries only hashes of the arguments — never the raw accountId — so
+// shipping the audit pipeline to a wider audience never leaks identifiers.
+
+const RawAccountSchema = AccountSchema.extend({
+  // Same shape as the masked AccountSchema but the three PII fields are
+  // never run through the redactors — the whole point of this tool is to
+  // surface the upstream value verbatim. We don't broaden the type since
+  // the SDK already declares `string | null`.
+});
+
+const GetRawAccountDetailsOutputShape = {
+  ok: z.boolean().describe('true on success, false when an error envelope is returned'),
+  account: RawAccountSchema.optional(),
+  errorCode: ErrorCodeEnum.optional(),
+  requestId: z.string().optional().describe('Correlation id present in stderr logs'),
+  message: z.string().optional().describe('Model-actionable error message'),
+};
+
+export function registerGetRawAccountDetailsTool(server: McpServer): void {
+  const toolName = 'getRawAccountDetails';
+  server.registerTool(
+    toolName,
+    {
+      description:
+        UNTRUSTED_PREAMBLE +
+        '\n\n' +
+        'DESTRUCTIVE FOR PRIVACY: returns unmasked CPF, full account number, ' +
+        'and account holder name for a single Pluggy account. Use only when ' +
+        'explicitly requested by the user. Every call is audit-logged.',
+      inputSchema: {
+        accountId: z
+          .string()
+          .min(1)
+          .describe('The Pluggy account id to fetch in unmasked form.'),
+      },
+      outputSchema: GetRawAccountDetailsOutputShape,
+      annotations: {
+        title: 'Get Raw Pluggy Account Details (unmasked)',
+        // Read-only — we do not mutate Pluggy data. "Destructive" in the
+        // description refers to privacy, not to data integrity, so the
+        // MCP `readOnlyHint` is still accurate.
+        readOnlyHint: true,
+        openWorldHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (args) => {
+      const start = performance.now();
+      // We always audit — the `finally` block at the bottom guarantees a
+      // single line per call regardless of which branch we returned from.
+      let outcome: 'success' | 'error' = 'success';
+      let errorCode: string | undefined;
+      let requestId: string | undefined;
+      let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
+      try {
+        const sec = loadSecurityConfig();
+        const rl = sec.rateLimit
+          ? checkRateLimit(toolName)
+          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
+        if (!rl.allowed) {
+          outcome = 'error';
+          errorCode = 'LOCAL_RATE_LIMITED';
+          rateLimitReason = rl.reason;
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'LOCAL_RATE_LIMITED' as const,
+            message: LOCAL_RATE_LIMITED_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
+          };
+        }
+
+        const { accountId } = args;
+        const client = getPluggyClient();
+        const a = await client.fetchAccount(accountId);
+
+        const account = {
+          id: a.id,
+          itemId: a.itemId,
+          type: a.type,
+          subtype: a.subtype,
+          balance: a.balance,
+          // The PII fields below are intentionally unmasked — this is
+          // the explicit "show me the raw values" tool. The non-PII
+          // free-text fields are still wrapped in <untrusted> to keep
+          // the indirect-prompt-injection posture consistent.
+          name: wrapUntrusted(a.name) ?? a.name,
+          marketingName: wrapUntrusted(a.marketingName),
+          currencyCode: a.currencyCode,
+          number: a.number,
+          owner: a.owner,
+          taxNumber: a.taxNumber,
+          bankData: a.bankData,
+          creditData: a.creditData
+            ? {
+                ...a.creditData,
+                balanceCloseDate:
+                  a.creditData.balanceCloseDate instanceof Date
+                    ? a.creditData.balanceCloseDate.toISOString()
+                    : a.creditData.balanceCloseDate,
+                balanceDueDate:
+                  a.creditData.balanceDueDate instanceof Date
+                    ? a.creditData.balanceDueDate.toISOString()
+                    : a.creditData.balanceDueDate,
+              }
+            : null,
+        };
+
+        const output = { ok: true as const, account };
+        return {
+          structuredContent: output,
+          content: [
+            {
+              type: 'text' as const,
+              // Generic text — the structured content carries the
+              // account id for the LLM. Avoid interpolating the id
+              // into the free-text channel where it'd show up in
+              // transcripts and conversation summaries.
+              text: 'Returned unmasked account details.',
+            },
+          ],
+        };
+      } catch (err) {
+        outcome = 'error';
+        const safe = classifyAndReport(err, {
+          tool: toolName,
+          operation: 'fetchAccount',
+        });
+        errorCode = safe.errorCode;
+        requestId = safe.requestId;
+        const errorOutput = {
+          ok: false as const,
+          errorCode: safe.errorCode,
+          requestId: safe.requestId,
+          message: safe.message,
+        };
+        return {
+          isError: true,
+          structuredContent: errorOutput,
+          content: [{ type: 'text' as const, text: safe.message }],
+        };
+      } finally {
+        audit({
+          tool: toolName,
+          outcome,
+          errorCode,
+          durationMs: Math.round(performance.now() - start),
+          ...hashArgsSafely(args, ['accountId']),
+          sensitive: true,
+          requestId,
+          rateLimitReason,
+        });
       }
     },
   );

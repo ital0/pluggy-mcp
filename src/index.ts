@@ -8,8 +8,9 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { SERVER_INFO, loadPluggyConfig } from './config.js';
+import { SERVER_INFO, loadPluggyConfig, logSecurityConfig } from './config.js';
 import { registerAllTools } from './tools/index.js';
+import { logEvent } from './util/log.js';
 
 async function main(): Promise<void> {
   // Process-level safety net. We split policy between the two channels:
@@ -20,24 +21,14 @@ async function main(): Promise<void> {
   //    exception leaves the process in an unknown state; the safest move
   //    is to exit so the MCP host can restart the server cleanly.
   process.on('unhandledRejection', (reason) => {
-    console.error(
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        event: 'unhandledRejection',
-        reason: String(reason),
-      }),
-    );
+    logEvent('unhandledRejection', { reason: String(reason) });
     // Intentionally do NOT exit — a missing .catch should not abort mid-tool-call.
   });
   process.on('uncaughtException', (err) => {
-    console.error(
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        event: 'uncaughtException',
-        name: err?.name ?? null,
-        message: err?.message ?? null,
-      }),
-    );
+    logEvent('uncaughtException', {
+      name: err?.name ?? null,
+      message: err?.message ?? null,
+    });
     // Per Node.js docs, uncaught exceptions mean the process is in an unknown state.
     // Exit so the MCP host can restart the server cleanly.
     process.exit(1);
@@ -49,6 +40,11 @@ async function main(): Promise<void> {
   });
 
   registerAllTools(server);
+
+  // Surface the resolved security toggles once at startup. Tools read the
+  // same loadSecurityConfig() so the line below documents the truth they
+  // will observe at runtime — and warns the operator if redaction is off.
+  logSecurityConfig();
 
   // Surface a startup hint to the operator without crashing — the server
   // can still serve `tools/list`, and individual tools will return a safe
@@ -72,19 +68,11 @@ async function main(): Promise<void> {
   async function shutdown(signal: string): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.error(
-      JSON.stringify({ ts: new Date().toISOString(), event: 'shutdown', signal }),
-    );
+    logEvent('shutdown', { signal });
     try {
       await server.close();
     } catch (err) {
-      console.error(
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          event: 'shutdown_error',
-          message: (err as Error)?.message ?? null,
-        }),
-      );
+      logEvent('shutdown_error', { message: (err as Error)?.message ?? null });
     }
     process.exit(0);
   }
