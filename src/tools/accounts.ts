@@ -748,16 +748,28 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
         });
         errorCode = safe.errorCode;
         requestId = safe.requestId;
+        // Tool-specific override for 404/403 — the generic classifier
+        // returns "the resource does not exist", but for this endpoint
+        // the much more common cause is the connector not implementing
+        // /accounts/{id}/balance. Keep the correlation id so an operator
+        // can still cross-reference the stderr log.
+        let message = safe.message;
+        if (safe.errorCode === 'NOT_FOUND' || safe.errorCode === 'FORBIDDEN') {
+          message =
+            'Real-time balance is only available for Open Finance connectors. ' +
+            'This account either does not exist or the connector does not ' +
+            `support /accounts/{id}/balance. request-id=${safe.requestId}`;
+        }
         const errorOutput = {
           ok: false as const,
           errorCode: safe.errorCode,
           requestId: safe.requestId,
-          message: safe.message,
+          message,
         };
         return {
           isError: true,
           structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
+          content: [{ type: 'text' as const, text: message }],
         };
       } finally {
         audit({
