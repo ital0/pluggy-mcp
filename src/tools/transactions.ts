@@ -30,6 +30,7 @@ import {
   checkRateLimit,
   hashArgsSafely,
   hashForAudit,
+  redactAccountNumber,
   redactBoletoLine,
   redactCardNumber,
   redactCpf,
@@ -69,13 +70,12 @@ const PaymentParticipantDocSchema = z.object({
 const PaymentParticipantSchema = z.object({
   documentNumber: PaymentParticipantDocSchema.optional(),
   name: z.string().optional().nullable(),
-  // Account / routing / branch numbers are kept as-is — they are not the
-  // same PII tier as a CPF (no national-id check digit) and stripping
-  // them would hide useful disambiguation for the LLM. If a future
-  // policy decision asks for masking here, hook in `redactAccountNumber`
-  // — the call sites already pass through `mapParticipant` so a single
-  // change applies to both payer and receiver.
-  accountNumber: z.string().optional(),
+  // `accountNumber` is the counter-party's bank account — same PII tier
+  // as our own `Account.number` and gets the same last-4 masking when
+  // redact is on. `branchNumber` / `routingNumber` / `routingNumberISPB`
+  // are bank identifiers (agency, ISPB) rather than per-customer PII, so
+  // they pass through unchanged.
+  accountNumber: z.string().optional().nullable(),
   branchNumber: z.string().optional(),
   routingNumber: z.string().optional(),
   routingNumberISPB: z.string().optional(),
@@ -199,7 +199,10 @@ function mapParticipant(
   return {
     documentNumber: maskedDoc,
     name: redact ? redactOwnerName(p.name ?? null) : (p.name ?? null),
-    accountNumber: p.accountNumber,
+    accountNumber:
+      redact && p.accountNumber !== undefined
+        ? redactAccountNumber(p.accountNumber) ?? undefined
+        : p.accountNumber,
     branchNumber: p.branchNumber,
     routingNumber: p.routingNumber,
     routingNumberISPB: p.routingNumberISPB,
@@ -331,8 +334,10 @@ function mapTransaction(
         cnpj: t.merchant.cnpj,
         cnae: t.merchant.cnae,
         // `category` here is the merchant-declared category (free text),
-        // distinct from `categoryId` (Pluggy's canonical category). Wrap.
-        category: t.merchant.category,
+        // distinct from `categoryId` (Pluggy's canonical category). Wrap
+        // so the LLM treats institution-provided strings as data, never
+        // as instructions.
+        category: wrapUntrusted(t.merchant.category ?? null) ?? undefined,
       }
     : undefined;
 
