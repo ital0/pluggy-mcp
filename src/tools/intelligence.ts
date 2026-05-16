@@ -56,6 +56,14 @@ const INSIGHTS_BOOK_URL = 'https://insights-api.pluggy.ai/book';
 const INSIGHTS_ITEM_NOT_ALLOWED_MESSAGE =
   'One or more itemIds not in PLUGGY_ITEM_IDS allowlist.';
 
+// Defense-in-depth: zod `.min(1)` already rejects empty arrays at the
+// SDK validation layer. Should that ever change (e.g. someone loosens
+// the schema), an empty `itemIds=` query string would let Pluggy
+// interpret the call as "return all" — silently widening scope. We
+// fail closed with a hardcoded message instead.
+const INSIGHTS_NO_ITEM_IDS_MESSAGE =
+  'getInsightsBook requires at least one itemId.';
+
 // ---------------------------------------------------------------------------
 // `getRecurringPayments`
 // ---------------------------------------------------------------------------
@@ -370,6 +378,26 @@ export function registerGetInsightsBookTool(server: McpServer): void {
             isError: true,
             structuredContent: errorOutput,
             content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
+          };
+        }
+
+        // Defense-in-depth runtime check — zod `.min(1)` should already
+        // have rejected an empty array, but a future schema loosening
+        // would otherwise silently widen the upstream call to "all items".
+        if (itemIds.length === 0) {
+          outcome = 'error';
+          errorCode = 'UNKNOWN';
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'UNKNOWN' as const,
+            message: INSIGHTS_NO_ITEM_IDS_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [
+              { type: 'text' as const, text: INSIGHTS_NO_ITEM_IDS_MESSAGE },
+            ],
           };
         }
 
