@@ -288,8 +288,8 @@ export function registerGetItemTool(server: McpServer): void {
             {
               type: 'text' as const,
               // Generic — the structured channel carries the id; keep the
-              // free-text line out of transcripts.
-              text: `Item ${it.id} status=${it.status}.`,
+              // raw id out of transcripts and summaries.
+              text: `Item status=${it.status}.`,
             },
           ],
         };
