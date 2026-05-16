@@ -73,7 +73,7 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
     statusCode?: number;
     code?: string;
     body?: { statusCode?: number; code?: string };
-    cause?: { statusCode?: number };
+    cause?: { statusCode?: number; code?: string };
   };
   const status: number | null =
     [
@@ -84,10 +84,16 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
       anyErr?.body?.statusCode,
       anyErr?.cause?.statusCode,
     ].find((v): v is number => typeof v === 'number') ?? null;
+  // Node 18+ `fetch` surfaces network errors as `TypeError` with the syscall
+  // code on `cause.code` (e.g. `ENOTFOUND`, `ECONNREFUSED`), not at the top
+  // level — probe both paths so `NETWORK` classification fires there too.
   const code: string | null =
-    [anyErr?.code, anyErr?.body?.code, anyErr?.response?.body?.code].find(
-      (v): v is string => typeof v === 'string',
-    ) ?? null;
+    [
+      anyErr?.code,
+      anyErr?.body?.code,
+      anyErr?.response?.body?.code,
+      anyErr?.cause?.code,
+    ].find((v): v is string => typeof v === 'string') ?? null;
   return { status, code };
 }
 
@@ -178,10 +184,15 @@ export function classifyAndReport(
   } else if (status !== null && status >= 500) {
     errorCode = 'UPSTREAM_5XX';
     message = 'Pluggy returned a transient server error. Retry shortly.';
-  } else if (code === 'ETIMEDOUT' || code === 'ECONNRESET' || code === 'ENOTFOUND') {
+  } else if (
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNRESET' ||
+    code === 'ENOTFOUND' ||
+    code === 'ECONNREFUSED'
+  ) {
     errorCode = 'NETWORK';
     // Hardcoded — do not interpolate `code` into the LLM-facing string,
-    // even though it's constrained to the three values above. The exact
+    // even though it's constrained to a small allowlist above. The exact
     // syscall code is available to the operator in the stderr log.
     message = 'Network error talking to Pluggy. Retry shortly.';
   }
