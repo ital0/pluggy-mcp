@@ -8,7 +8,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { SERVER_INFO, loadPluggyConfig } from './config.js';
+import { SERVER_INFO, loadPluggyConfig, logSecurityConfig } from './config.js';
 import { registerAllTools } from './tools/index.js';
 
 async function main(): Promise<void> {
@@ -49,6 +49,11 @@ async function main(): Promise<void> {
   });
 
   registerAllTools(server);
+
+  // Surface the resolved security toggles once at startup. Tools read the
+  // same loadSecurityConfig() so the line below documents the truth they
+  // will observe at runtime — and warns the operator if redaction is off.
+  logSecurityConfig();
 
   // Surface a startup hint to the operator without crashing — the server
   // can still serve `tools/list`, and individual tools will return a safe
