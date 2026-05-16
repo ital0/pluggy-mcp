@@ -55,27 +55,39 @@ export interface SafeError {
  * Best-effort extraction of HTTP status / code from heterogeneous error
  * shapes:
  *  - `got` HTTPError → `.response.statusCode`
- *  - pluggy-sdk wrappers → `.statusCode`
+ *  - pluggy-sdk data rejections → the parsed JSON body is the error
+ *    itself, with `.statusCode` / `.code` / `.message` keys (see
+ *    baseApi.js → `Promise.reject(body)`)
+ *  - pluggy-sdk auth rejections → wrapped HTTPError → `.response.body.statusCode`
  *  - axios / `fetch`-style errors → `.response.status`
  *  - modern Node error chains (`AggregateError` etc) → `.cause.statusCode`
  *
- * All four are checked defensively; the first match wins.
+ * All probes are checked defensively; the first match wins. We never
+ * map a Pluggy string `code` (e.g. `"INVALID_FILTER"`) into our HTTP
+ * status enum — those identifiers are not stable across SDK versions
+ * and the LLM-facing message stays generic on purpose.
  */
 function extractStatus(err: unknown): { status: number | null; code: string | null } {
   const anyErr = err as {
-    response?: { statusCode?: number; status?: number };
+    response?: { statusCode?: number; status?: number; body?: { statusCode?: number; code?: string } };
     statusCode?: number;
     code?: string;
+    body?: { statusCode?: number; code?: string };
     cause?: { statusCode?: number };
   };
   const status: number | null =
     [
       anyErr?.response?.statusCode,
       anyErr?.response?.status,
+      anyErr?.response?.body?.statusCode,
       anyErr?.statusCode,
+      anyErr?.body?.statusCode,
       anyErr?.cause?.statusCode,
     ].find((v): v is number => typeof v === 'number') ?? null;
-  const code = typeof anyErr?.code === 'string' ? anyErr.code : null;
+  const code: string | null =
+    [anyErr?.code, anyErr?.body?.code, anyErr?.response?.body?.code].find(
+      (v): v is string => typeof v === 'string',
+    ) ?? null;
   return { status, code };
 }
 
