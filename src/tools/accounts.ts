@@ -66,9 +66,11 @@ const AccountSchema = z.object({
   currencyCode: z.string().describe('ISO 4217 currency code'),
   // PII fields — masked by default via the redact helpers. See
   // `getRawAccountDetails` for the unmasked variant.
+  // SDK declares `number: string` (non-nullable); the redactor preserves
+  // that — it returns null only when the input is null, which won't
+  // happen for this field.
   number: z
     .string()
-    .nullable()
     .describe('Account number, masked to last 4 digits unless PLUGGY_MCP_REDACT=false'),
   owner: z
     .string()
@@ -202,10 +204,10 @@ export function registerGetAccountsTool(server: McpServer): void {
           type: a.type,
           subtype: a.subtype,
           balance: a.balance,
-          name: wrapUntrusted(a.name) ?? a.name,
+          name: wrapUntrusted(a.name) as string,
           marketingName: wrapUntrusted(a.marketingName),
           currencyCode: a.currencyCode,
-          number: redact ? redactAccountNumber(a.number) : a.number,
+          number: redact ? (redactAccountNumber(a.number) as string) : a.number,
           owner: redact ? redactOwnerName(a.owner) : a.owner,
           taxNumber: redact ? redactCpf(a.taxNumber) : a.taxNumber,
           // Explicit field copy of bankData so a future SDK addition can't
@@ -416,7 +418,7 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
           // the explicit "show me the raw values" tool. The non-PII
           // free-text fields are still wrapped in <untrusted> to keep
           // the indirect-prompt-injection posture consistent.
-          name: wrapUntrusted(a.name) ?? a.name,
+          name: wrapUntrusted(a.name) as string,
           marketingName: wrapUntrusted(a.marketingName),
           currencyCode: a.currencyCode,
           number: a.number,
@@ -585,10 +587,10 @@ export function registerGetAccountTool(server: McpServer): void {
           type: a.type,
           subtype: a.subtype,
           balance: a.balance,
-          name: wrapUntrusted(a.name) ?? a.name,
+          name: wrapUntrusted(a.name) as string,
           marketingName: wrapUntrusted(a.marketingName),
           currencyCode: a.currencyCode,
-          number: redact ? redactAccountNumber(a.number) : a.number,
+          number: redact ? (redactAccountNumber(a.number) as string) : a.number,
           owner: redact ? redactOwnerName(a.owner) : a.owner,
           taxNumber: redact ? redactCpf(a.taxNumber) : a.taxNumber,
           bankData: a.bankData

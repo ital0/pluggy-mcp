@@ -125,7 +125,7 @@ function mapProductState(
   if (state === null || state === undefined) return null;
   const warnings = state.warnings?.map((w) => ({
     code: w.code,
-    message: wrapUntrusted(w.message) ?? w.message,
+    message: wrapUntrusted(w.message) as string,
     providerMessage:
       w.providerMessage !== undefined
         ? wrapUntrusted(w.providerMessage) ?? undefined
@@ -253,7 +253,7 @@ export function registerGetItemTool(server: McpServer): void {
         const item = {
           id: it.id,
           connectorId: it.connector.id,
-          connectorName: wrapUntrusted(it.connector.name) ?? it.connector.name,
+          connectorName: wrapUntrusted(it.connector.name) as string,
           status: it.status,
           executionStatus: it.executionStatus,
           statusDetail: mapStatusDetail(
