@@ -26,7 +26,6 @@ import {
   checkRateLimit,
   hashArgsSafely,
   hashForAudit,
-  UNTRUSTED_PREAMBLE,
   LOCAL_RATE_LIMITED_MESSAGE,
 } from '../security/index.js';
 import { ITEM_NOT_ALLOWED_MESSAGE } from './items.js';
@@ -152,7 +151,10 @@ export function registerListConsentsTool(server: McpServer): void {
         }));
 
         const total = page.total ?? consents.length;
-        const truncated = total > consents.length;
+        // Compare totalPages instead of `total > consents.length` so the
+        // truncated flag survives a future SDK default page-size change.
+        const totalPages = page.totalPages ?? 1;
+        const truncated = totalPages > 1;
 
         if (truncated) {
           logEvent('truncated', {
@@ -175,9 +177,12 @@ export function registerListConsentsTool(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
+              // Keep ids out of the free-text channel — `structuredContent`
+              // already echoes `itemId`. Other tools in this server do
+              // the same; stay consistent.
               text: truncated
-                ? `Found ${consents.length} of ${total} consent(s) for item ${itemId} (truncated; pagination ships in a later PR).`
-                : `Found ${consents.length} consent(s) for item ${itemId}.`,
+                ? `Found ${consents.length} of ${total} consent(s) (truncated; pagination ships in a later PR).`
+                : `Found ${consents.length} consent(s).`,
             },
           ],
         };
@@ -223,9 +228,11 @@ export function registerGetConsentTool(server: McpServer): void {
       description:
         'Fetch a single Open Finance consent by id. Returns the products, ' +
         'permissions, expiration, and revocation status for the consent. ' +
-        'Note: consent ids cannot be cheaply mapped back to an item, so this ' +
-        'tool is NOT gated by the PLUGGY_ITEM_IDS allowlist — only the ' +
-        'item-scoped `listConsents` is.',
+        'Note: This tool takes a direct consentId and is NOT gated by ' +
+        'PLUGGY_ITEM_IDS before the SDK call. When an allowlist is ' +
+        'configured the response is filtered after fetching — the upstream ' +
+        'round-trip still happens, but a consent whose parent itemId is ' +
+        'not allowlisted returns a FORBIDDEN envelope.',
       inputSchema: {
         consentId: z
           .string()
@@ -269,6 +276,27 @@ export function registerGetConsentTool(server: McpServer): void {
 
         const client = getPluggyClient();
         const c = await client.fetchConsent(consentId);
+
+        // Post-fetch allowlist check: we cannot avoid the round-trip
+        // because consentId doesn't reveal the parent itemId, but we
+        // can refuse to surface the response when the resolved item is
+        // outside the operator's allowlist. Better to leak nothing in
+        // the LLM context than to honour a curiosity-driven probe.
+        if (!isItemAllowed(c.itemId)) {
+          outcome = 'error';
+          errorCode = 'FORBIDDEN';
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'FORBIDDEN' as const,
+            message: ITEM_NOT_ALLOWED_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: ITEM_NOT_ALLOWED_MESSAGE }],
+          };
+        }
+
         const consent = {
           id: c.id,
           itemId: c.itemId,
@@ -285,7 +313,8 @@ export function registerGetConsentTool(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Consent ${c.id} (item ${c.itemId}).`,
+              // Generic — the ids are already in `structuredContent.consent`.
+              text: 'Returned consent details.',
             },
           ],
         };

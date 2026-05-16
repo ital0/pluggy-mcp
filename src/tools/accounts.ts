@@ -261,9 +261,12 @@ export function registerGetAccountsTool(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
+              // Keep ids out of the free-text channel — `structuredContent`
+              // already echoes `itemId`. Other tools in this server do
+              // the same; stay consistent.
               text: truncated
-                ? `Found ${accounts.length} of ${total} account(s) for item ${itemId} (truncated; pagination ships in a later PR).`
-                : `Found ${accounts.length} account(s) for item ${itemId}.`,
+                ? `Found ${accounts.length} of ${total} account(s) (truncated; pagination ships in a later PR).`
+                : `Found ${accounts.length} account(s).`,
             },
           ],
         };
