@@ -4,9 +4,16 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { audit, checkRateLimit, hashForAudit } from '../security/index.js';
+
+// Hardcoded — same posture as `src/util/errors.ts`; never let runtime
+// state leak into the model-facing string.
+const RATE_LIMITED_MESSAGE =
+  'Rate limit exceeded for this MCP tool. Wait a moment before retrying.';
 
 // Subset of the SDK's Connector shape — we expose only stable fields that
 // are useful for an LLM picking a connector. The SDK adds new optional
@@ -89,7 +96,27 @@ export function registerListConnectorsTool(server: McpServer): void {
       },
     },
     async () => {
+      const start = performance.now();
+      let outcome: 'success' | 'error' = 'success';
+      let errorCode: string | undefined;
+      let requestId: string | undefined;
       try {
+        const rl = checkRateLimit('listConnectors');
+        if (!rl.allowed) {
+          outcome = 'error';
+          errorCode = 'RATE_LIMITED';
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'RATE_LIMITED' as const,
+            message: RATE_LIMITED_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: RATE_LIMITED_MESSAGE }],
+          };
+        }
+
         const client = getPluggyClient();
         const page = await client.fetchConnectors();
 
@@ -154,10 +181,13 @@ export function registerListConnectorsTool(server: McpServer): void {
           ],
         };
       } catch (err) {
+        outcome = 'error';
         const safe = classifyAndReport(err, {
           tool: 'listConnectors',
           operation: 'fetchConnectors',
         });
+        errorCode = safe.errorCode;
+        requestId = safe.requestId;
         // Must include `structuredContent` even on errors when an
         // `outputSchema` is declared — the SDK throws McpError otherwise.
         const errorOutput = {
@@ -171,6 +201,18 @@ export function registerListConnectorsTool(server: McpServer): void {
           structuredContent: errorOutput,
           content: [{ type: 'text' as const, text: safe.message }],
         };
+      } finally {
+        audit({
+          tool: 'listConnectors',
+          outcome,
+          errorCode,
+          durationMs: Math.round(performance.now() - start),
+          // No inputs to hash — listConnectors takes no args. The
+          // `argsHash` field is omitted entirely so the audit line stays
+          // honest about there being nothing to fingerprint.
+          argsHash: hashForAudit({}),
+          requestId,
+        });
       }
     },
   );

@@ -76,6 +76,12 @@ const AccountSchema = z.object({
   creditData: CreditDataSchema.nullable(),
 });
 
+// Hardcoded user-facing message for in-process rate-limit denials. Same
+// security posture as `src/util/errors.ts` — never interpolate runtime
+// state (limits, retry-after) into the model-facing string.
+const RATE_LIMITED_MESSAGE =
+  'Rate limit exceeded for this MCP tool. Wait a moment before retrying.';
+
 // Flat output shape — `z.discriminatedUnion` can't be passed to
 // `registerTool`'s `outputSchema` because the SDK wraps the argument in
 // `z.object(...)`. Both branches still share a single discriminator
@@ -124,7 +130,27 @@ export function registerGetAccountsTool(server: McpServer): void {
       },
     },
     async ({ itemId }) => {
+      const start = performance.now();
+      let outcome: 'success' | 'error' = 'success';
+      let errorCode: string | undefined;
+      let requestId: string | undefined;
       try {
+        const rl = checkRateLimit('getAccounts');
+        if (!rl.allowed) {
+          outcome = 'error';
+          errorCode = 'RATE_LIMITED';
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'RATE_LIMITED' as const,
+            message: RATE_LIMITED_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: RATE_LIMITED_MESSAGE }],
+          };
+        }
+
         const client = getPluggyClient();
         const page = await client.fetchAccounts(itemId);
 
@@ -193,10 +219,13 @@ export function registerGetAccountsTool(server: McpServer): void {
           ],
         };
       } catch (err) {
+        outcome = 'error';
         const safe = classifyAndReport(err, {
           tool: 'getAccounts',
           operation: 'fetchAccounts',
         });
+        errorCode = safe.errorCode;
+        requestId = safe.requestId;
         const errorOutput = {
           ok: false as const,
           errorCode: safe.errorCode,
@@ -208,6 +237,16 @@ export function registerGetAccountsTool(server: McpServer): void {
           structuredContent: errorOutput,
           content: [{ type: 'text' as const, text: safe.message }],
         };
+      } finally {
+        audit({
+          tool: 'getAccounts',
+          outcome,
+          errorCode,
+          durationMs: Math.round(performance.now() - start),
+          argsHash: hashForAudit({ itemId }),
+          itemIdHash: typeof itemId === 'string' ? hashForAudit(itemId) : undefined,
+          requestId,
+        });
       }
     },
   );
@@ -241,9 +280,6 @@ const GetRawAccountDetailsOutputShape = {
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
 };
-
-const RATE_LIMITED_MESSAGE =
-  'Rate limit exceeded for this MCP tool. Wait a moment before retrying.';
 
 export function registerGetRawAccountDetailsTool(server: McpServer): void {
   const toolName = 'getRawAccountDetails';
