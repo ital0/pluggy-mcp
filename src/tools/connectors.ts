@@ -229,3 +229,148 @@ export function registerListConnectorsTool(server: McpServer): void {
     },
   );
 }
+
+// ---------------------------------------------------------------------------
+// getConnector
+// ---------------------------------------------------------------------------
+//
+// Fetches a single connector by its numeric id. Same field set as
+// `listConnectors` plus the `credentials` array (the schema the
+// institution requires to create an item — used to render the right
+// form in a UI). Connector ids are numeric integers, NOT UUIDs, so the
+// input schema validates `z.number().int()`. No PII; same untrusted wrap
+// for the free-text `name`.
+
+const GetConnectorOutputShape = {
+  ok: z.boolean().describe('true on success, false when an error envelope is returned'),
+  connector: ConnectorSchema.optional(),
+  errorCode: ErrorCodeEnum.optional(),
+  requestId: z.string().optional().describe('Correlation id present in stderr logs'),
+  message: z.string().optional().describe('Model-actionable error message'),
+};
+
+export function registerGetConnectorTool(server: McpServer): void {
+  const toolName = 'getConnector';
+  server.registerTool(
+    toolName,
+    {
+      description:
+        UNTRUSTED_PREAMBLE +
+        '\n\n' +
+        'Fetch a single Pluggy connector by id. Use this after ' +
+        '`listConnectors` to inspect the products an institution supports, ' +
+        'its real-time health, and the credentials schema needed to create ' +
+        'an item against it.',
+      inputSchema: {
+        connectorId: z
+          .number()
+          .int()
+          .positive()
+          .describe('Numeric Pluggy connector id (NOT a UUID).'),
+      },
+      outputSchema: GetConnectorOutputShape,
+      annotations: {
+        title: 'Get Pluggy Connector',
+        readOnlyHint: true,
+        openWorldHint: true,
+        idempotentHint: true,
+      },
+    },
+    async ({ connectorId }) => {
+      const start = performance.now();
+      let outcome: 'success' | 'error' = 'success';
+      let errorCode: string | undefined;
+      let requestId: string | undefined;
+      let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
+      try {
+        const sec = loadSecurityConfig();
+        const rl = sec.rateLimit
+          ? checkRateLimit(toolName)
+          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
+        if (!rl.allowed) {
+          outcome = 'error';
+          errorCode = 'LOCAL_RATE_LIMITED';
+          rateLimitReason = rl.reason;
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'LOCAL_RATE_LIMITED' as const,
+            message: LOCAL_RATE_LIMITED_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
+          };
+        }
+
+        const client = getPluggyClient();
+        const c = await client.fetchConnector(connectorId);
+
+        const connector = {
+          id: c.id,
+          name: wrapUntrusted(c.name) ?? c.name,
+          institutionUrl: c.institutionUrl,
+          imageUrl: c.imageUrl,
+          primaryColor: c.primaryColor,
+          type: c.type,
+          country: c.country,
+          hasMFA: c.hasMFA,
+          oauth: c.oauth,
+          isOpenFinance: c.isOpenFinance,
+          isSandbox: c.isSandbox,
+          supportsPaymentInitiation: c.supportsPaymentInitiation,
+          supportsScheduledPayments: c.supportsScheduledPayments,
+          supportsSmartTransfers: c.supportsSmartTransfers,
+          products: c.products,
+          health: {
+            status: c.health.status,
+            stage: c.health.stage,
+          },
+        };
+
+        const output = { ok: true as const, connector };
+        return {
+          structuredContent: output,
+          content: [
+            {
+              type: 'text' as const,
+              text: `Connector ${c.id} (${c.country}) health=${c.health.status}.`,
+            },
+          ],
+        };
+      } catch (err) {
+        outcome = 'error';
+        const safe = classifyAndReport(err, {
+          tool: toolName,
+          operation: 'fetchConnector',
+        });
+        errorCode = safe.errorCode;
+        requestId = safe.requestId;
+        const errorOutput = {
+          ok: false as const,
+          errorCode: safe.errorCode,
+          requestId: safe.requestId,
+          message: safe.message,
+        };
+        return {
+          isError: true,
+          structuredContent: errorOutput,
+          content: [{ type: 'text' as const, text: safe.message }],
+        };
+      } finally {
+        audit({
+          tool: toolName,
+          outcome,
+          errorCode,
+          durationMs: Math.round(performance.now() - start),
+          // connectorId is numeric — hashArgsSafely's allowlist only
+          // copies stringy fields, so pass a [] allowlist; the argsHash
+          // still includes the numeric value for correlation.
+          ...hashArgsSafely({ connectorId }, []),
+          requestId,
+          rateLimitReason,
+        });
+      }
+    },
+  );
+}
