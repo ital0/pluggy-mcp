@@ -481,7 +481,16 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
         sensitive = true;
         const client = getPluggyClient();
         const i = await client.fetchIdentityByItemId(itemId);
-        const identity = mapIdentity(i as unknown as IdentityLike, sec.redact);
+        // Isolate mapping errors so a malformed upstream shape can't
+        // pop up a stack trace containing identity field names. The
+        // hardcoded sentinel keeps `classifyAndReport` on the UNKNOWN
+        // branch without leaking enumeration material.
+        let identity;
+        try {
+          identity = mapIdentity(i as unknown as IdentityLike, sec.redact);
+        } catch {
+          throw new Error('mapping_failure');
+        }
 
         const output = { ok: true as const, identity };
         return {
@@ -615,7 +624,13 @@ export function registerGetIdentityTool(server: McpServer): void {
         sensitive = true;
         const client = getPluggyClient();
         const i = await client.fetchIdentity(identityId);
-        const identity = mapIdentity(i as unknown as IdentityLike, sec.redact);
+        // Isolate mapping errors — see `getIdentityByItem` for rationale.
+        let identity;
+        try {
+          identity = mapIdentity(i as unknown as IdentityLike, sec.redact);
+        } catch {
+          throw new Error('mapping_failure');
+        }
 
         const output = { ok: true as const, identity };
         return {
