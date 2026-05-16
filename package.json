@@ -2,7 +2,7 @@
   "name": "pluggy-mcp",
   "version": "1.0.0",
   "description": "MCP server for the Pluggy API (Brazilian Open Finance)",
-  "mcpName": "io.github.italomenezes/pluggy-mcp",
+  "mcpName": "io.github.ital0/pluggy-mcp",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
