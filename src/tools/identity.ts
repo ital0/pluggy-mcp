@@ -52,6 +52,7 @@ import {
   checkRateLimit,
   hashArgsSafely,
   redactAccountNumber,
+  redactCnpj,
   redactCpf,
   redactEmail,
   redactOwnerName,
@@ -332,7 +333,13 @@ function mapIdentity(
       : null,
     qualifications: i.qualifications
       ? {
-          companyCnpj: i.qualifications.companyCnpj,
+          // Employer CNPJ uniquely identifies a Brazilian company — mask
+          // like CPF when redact is on. Falls back to the masked sentinel
+          // if the redactor returns null so the schema's non-null
+          // contract stays intact.
+          companyCnpj: redact
+            ? (redactCnpj(i.qualifications.companyCnpj) ?? '**.***.***/****-**')
+            : i.qualifications.companyCnpj,
           occupationCode: i.qualifications.occupationCode,
           // Salary / patrimony amounts pass through unmasked when
           // qualifications are present — that's the whole point of
