@@ -111,6 +111,7 @@ export function registerListConnectorsTool(server: McpServer): void {
       let outcome: 'success' | 'error' = 'success';
       let errorCode: string | undefined;
       let requestId: string | undefined;
+      let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
       try {
         const sec = loadSecurityConfig();
         const rl = sec.rateLimit
@@ -119,6 +120,7 @@ export function registerListConnectorsTool(server: McpServer): void {
         if (!rl.allowed) {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
+          rateLimitReason = rl.reason;
           const errorOutput = {
             ok: false as const,
             errorCode: 'LOCAL_RATE_LIMITED' as const,
@@ -230,6 +232,7 @@ export function registerListConnectorsTool(server: McpServer): void {
           // fingerprint without leaking any field names.
           ...hashArgsSafely({}, []),
           requestId,
+          rateLimitReason,
         });
       }
     },

@@ -141,6 +141,7 @@ export function registerGetAccountsTool(server: McpServer): void {
       let outcome: 'success' | 'error' = 'success';
       let errorCode: string | undefined;
       let requestId: string | undefined;
+      let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
       try {
         // Skip the limiter entirely when the operator has disabled it
         // via `PLUGGY_MCP_RATELIMIT=false`. We still want this branch
@@ -154,6 +155,7 @@ export function registerGetAccountsTool(server: McpServer): void {
         if (!rl.allowed) {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
+          rateLimitReason = rl.reason;
           const errorOutput = {
             ok: false as const,
             errorCode: 'LOCAL_RATE_LIMITED' as const,
@@ -267,6 +269,7 @@ export function registerGetAccountsTool(server: McpServer): void {
           durationMs: Math.round(performance.now() - start),
           ...hashArgsSafely({ itemId }, ['itemId']),
           requestId,
+          rateLimitReason,
         });
       }
     },
@@ -337,6 +340,7 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
       let outcome: 'success' | 'error' = 'success';
       let errorCode: string | undefined;
       let requestId: string | undefined;
+      let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
       try {
         const sec = loadSecurityConfig();
         const rl = sec.rateLimit
@@ -345,6 +349,7 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
         if (!rl.allowed) {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
+          rateLimitReason = rl.reason;
           const errorOutput = {
             ok: false as const,
             errorCode: 'LOCAL_RATE_LIMITED' as const,
@@ -431,6 +436,7 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
           ...hashArgsSafely(args, ['accountId']),
           sensitive: true,
           requestId,
+          rateLimitReason,
         });
       }
     },

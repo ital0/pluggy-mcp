@@ -32,6 +32,8 @@ export interface AuditEvent {
   sensitive?: boolean;
   /** Correlation id from the error path, when available. */
   requestId?: string;
+  /** Which rate-limit window tripped, when the call was denied locally. */
+  rateLimitReason?: 'PER_MINUTE' | 'PER_DAY';
 }
 
 /**
