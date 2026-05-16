@@ -14,22 +14,28 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { MissingCredentialsError } from '../pluggy/client.js';
 
 /**
  * Stable enum the LLM can pattern-match on. The values double as
  * documentation: each one corresponds to a well-defined upstream
  * situation, never to "something else went wrong".
+ *
+ * The Zod mirror (`ErrorCodeEnum`) is the canonical declaration; the TS
+ * `ErrorCode` type is derived from it so the two cannot drift.
  */
-export type ErrorCode =
-  | 'MISSING_CREDENTIALS'
-  | 'UNAUTHORIZED'
-  | 'FORBIDDEN'
-  | 'NOT_FOUND'
-  | 'RATE_LIMITED'
-  | 'UPSTREAM_5XX'
-  | 'NETWORK'
-  | 'UNKNOWN';
+export const ErrorCodeEnum = z.enum([
+  'MISSING_CREDENTIALS',
+  'UNAUTHORIZED',
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'RATE_LIMITED',
+  'UPSTREAM_5XX',
+  'NETWORK',
+  'UNKNOWN',
+]);
+export type ErrorCode = z.infer<typeof ErrorCodeEnum>;
 
 /**
  * Envelope returned to the tool — embedded as `structuredContent` when
@@ -53,15 +59,43 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
   // got's HTTPError exposes `.response.statusCode`; some wrappers store
   // it on `.statusCode` directly. Both are read defensively.
   const anyErr = err as { response?: { statusCode?: number }; statusCode?: number; code?: string };
-  const status =
-    typeof anyErr?.response?.statusCode === 'number'
-      ? anyErr.response.statusCode
-      : typeof anyErr?.statusCode === 'number'
-        ? anyErr.statusCode
-        : null;
+  let status: number | null = null;
+  if (typeof anyErr?.response?.statusCode === 'number') {
+    status = anyErr.response.statusCode;
+  } else if (typeof anyErr?.statusCode === 'number') {
+    status = anyErr.statusCode;
+  }
   const code = typeof anyErr?.code === 'string' ? anyErr.code : null;
   return { status, code };
 }
+
+// Pluggy's /auth handshake returns 400 — not 401 — for malformed or
+// invalid credentials, and the SDK only surfaces a raw HTTPError for
+// that pre-flight call (data calls have their non-2xx bodies caught
+// and rejected as plain objects instead). Treating a bare 400 from a
+// tool call as UNAUTHORIZED gives the model the right next step.
+const STATUS_MAP: Record<number, { errorCode: ErrorCode; message: string }> = {
+  400: {
+    errorCode: 'UNAUTHORIZED',
+    message: 'Pluggy rejected the credentials (400 on /auth). Verify PLUGGY_CLIENT_ID/SECRET.',
+  },
+  401: {
+    errorCode: 'UNAUTHORIZED',
+    message: 'Pluggy rejected the credentials (401). Rotate PLUGGY_CLIENT_ID/SECRET.',
+  },
+  403: {
+    errorCode: 'FORBIDDEN',
+    message: 'Pluggy returned 403 — premium feature or item not authorized for these credentials.',
+  },
+  404: {
+    errorCode: 'NOT_FOUND',
+    message: 'Pluggy returned 404 — the requested resource does not exist or was deleted.',
+  },
+  429: {
+    errorCode: 'RATE_LIMITED',
+    message: 'Pluggy returned 429 — rate limited. Back off and retry.',
+  },
+};
 
 /**
  * Classify an arbitrary thrown value into a `SafeError` and emit a
@@ -115,30 +149,10 @@ export function classifyAndReport(
   let errorCode: ErrorCode = 'UNKNOWN';
   let message = 'Unexpected error talking to Pluggy. See server logs.';
 
-  if (status === 401) {
-    errorCode = 'UNAUTHORIZED';
-    message =
-      'Pluggy rejected the credentials (401). Rotate PLUGGY_CLIENT_ID/SECRET.';
-  } else if (status === 400) {
-    // Pluggy's /auth handshake returns 400 — not 401 — for malformed or
-    // invalid credentials, and the SDK only surfaces a raw HTTPError for
-    // that pre-flight call (data calls have their non-2xx bodies caught
-    // and rejected as plain objects instead). Treating a bare 400 from a
-    // tool call as UNAUTHORIZED gives the model the right next step.
-    errorCode = 'UNAUTHORIZED';
-    message =
-      'Pluggy rejected the credentials (400 on /auth). Verify PLUGGY_CLIENT_ID/SECRET.';
-  } else if (status === 403) {
-    errorCode = 'FORBIDDEN';
-    message =
-      'Pluggy returned 403 — premium feature or item not authorized for these credentials.';
-  } else if (status === 404) {
-    errorCode = 'NOT_FOUND';
-    message =
-      'Pluggy returned 404 — the requested resource does not exist or was deleted.';
-  } else if (status === 429) {
-    errorCode = 'RATE_LIMITED';
-    message = 'Pluggy returned 429 — rate limited. Back off and retry.';
+  const mapped = status !== null ? STATUS_MAP[status] : undefined;
+  if (mapped) {
+    errorCode = mapped.errorCode;
+    message = mapped.message;
   } else if (status !== null && status >= 500) {
     errorCode = 'UPSTREAM_5XX';
     message = 'Pluggy returned a transient server error. Retry shortly.';

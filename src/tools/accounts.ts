@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
-import { classifyAndReport } from '../util/errors.js';
+import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 
 // NOTE: PII fields (taxNumber/CPF, owner full name, full account number, email, phone, address)
 // are intentionally omitted from PR1's output. They will be added back in PR2 with proper masking
@@ -50,17 +50,6 @@ const AccountSchema = z.object({
   creditData: CreditDataSchema.nullable(),
 });
 
-const ErrorCodeEnum = z.enum([
-  'MISSING_CREDENTIALS',
-  'UNAUTHORIZED',
-  'FORBIDDEN',
-  'NOT_FOUND',
-  'RATE_LIMITED',
-  'UPSTREAM_5XX',
-  'NETWORK',
-  'UNKNOWN',
-]);
-
 // Flat output shape — `z.discriminatedUnion` can't be passed to
 // `registerTool`'s `outputSchema` because the SDK wraps the argument in
 // `z.object(...)`. Both branches still share a single discriminator
@@ -80,6 +69,10 @@ const GetAccountsOutputShape = {
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
 };
+
+function toIsoIfDate<T>(value: T | Date): T | string {
+  return value instanceof Date ? value.toISOString() : value;
+}
 
 export function registerGetAccountsTool(server: McpServer): void {
   server.registerTool(
@@ -126,14 +119,8 @@ export function registerGetAccountsTool(server: McpServer): void {
           creditData: a.creditData
             ? {
                 ...a.creditData,
-                balanceCloseDate:
-                  a.creditData.balanceCloseDate instanceof Date
-                    ? a.creditData.balanceCloseDate.toISOString()
-                    : a.creditData.balanceCloseDate,
-                balanceDueDate:
-                  a.creditData.balanceDueDate instanceof Date
-                    ? a.creditData.balanceDueDate.toISOString()
-                    : a.creditData.balanceDueDate,
+                balanceCloseDate: toIsoIfDate(a.creditData.balanceCloseDate),
+                balanceDueDate: toIsoIfDate(a.creditData.balanceDueDate),
               }
             : null,
         }));
@@ -168,8 +155,8 @@ export function registerGetAccountsTool(server: McpServer): void {
             {
               type: 'text' as const,
               text: truncated
-                ? `Found ${output.accounts.length} of ${total} account(s) for item ${itemId} (truncated; pagination ships in a later PR).`
-                : `Found ${output.accounts.length} account(s) for item ${itemId}.`,
+                ? `Found ${accounts.length} of ${total} account(s) for item ${itemId} (truncated; pagination ships in a later PR).`
+                : `Found ${accounts.length} account(s) for item ${itemId}.`,
             },
           ],
         };
