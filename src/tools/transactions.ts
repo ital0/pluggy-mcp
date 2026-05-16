@@ -30,6 +30,7 @@ import {
   checkRateLimit,
   hashArgsSafely,
   hashForAudit,
+  redactCardNumber,
   redactCpf,
   redactOwnerName,
   wrapUntrusted,
@@ -331,12 +332,26 @@ function mapTransaction(
     status: t.status,
     providerCode: t.providerCode,
     paymentData,
+    // Explicit field-by-field copy of creditCardMetadata. Spreading the
+    // SDK object risks leaking a future-added field unredacted; listing
+    // each name forces a deliberate review when a new field appears.
+    // `cardNumber` is documented as already masked at the source, but
+    // we re-run `redactCardNumber` defensively when redact is on — no
+    // harm if it is already `****1234`.
     creditCardMetadata: t.creditCardMetadata
       ? {
-          ...t.creditCardMetadata,
+          installmentNumber: t.creditCardMetadata.installmentNumber,
+          totalInstallments: t.creditCardMetadata.totalInstallments,
+          totalAmount: t.creditCardMetadata.totalAmount,
+          payeeMCC: t.creditCardMetadata.payeeMCC,
           purchaseDate: t.creditCardMetadata.purchaseDate
             ? dateToIso(t.creditCardMetadata.purchaseDate) ?? undefined
             : undefined,
+          billId: t.creditCardMetadata.billId,
+          cardNumber:
+            redact && t.creditCardMetadata.cardNumber !== undefined
+              ? redactCardNumber(t.creditCardMetadata.cardNumber) ?? undefined
+              : t.creditCardMetadata.cardNumber,
         }
       : null,
     merchant,
