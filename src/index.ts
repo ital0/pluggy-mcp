@@ -12,6 +12,32 @@ import { SERVER_INFO, loadPluggyConfig } from './config.js';
 import { registerAllTools } from './tools/index.js';
 
 async function main(): Promise<void> {
+  // Process-level safety net. A stdio MCP server lives or dies with its
+  // pipes — exiting on a stray promise rejection would orphan the host
+  // mid-conversation. We log and stay up so the host can surface the
+  // error and the operator can grep stderr for `event=...`.
+  process.on('unhandledRejection', (reason) => {
+    console.error(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        event: 'unhandledRejection',
+        reason: String(reason),
+      }),
+    );
+  });
+  process.on('uncaughtException', (err) => {
+    console.error(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        event: 'uncaughtException',
+        name: err?.name ?? null,
+        message: err?.message ?? null,
+      }),
+    );
+    // Deliberately do NOT exit — keep the stdio pipe alive so the host
+    // can surface the error and the operator can decide what to do.
+  });
+
   const server = new McpServer({
     name: SERVER_INFO.name,
     version: SERVER_INFO.version,
