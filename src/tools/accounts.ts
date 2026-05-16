@@ -361,8 +361,8 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
       inputSchema: {
         accountId: z
           .string()
-          .min(1)
-          .describe('The Pluggy account id to fetch in unmasked form.'),
+          .uuid()
+          .describe('The Pluggy account id (UUID) to fetch in unmasked form.'),
       },
       outputSchema: GetRawAccountDetailsOutputShape,
       annotations: {
