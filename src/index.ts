@@ -1,109 +1,40 @@
 #!/usr/bin/env node
+/**
+ * MCP stdio entry point for pluggy-mcp.
+ *
+ * IMPORTANT: stdio MCP servers MUST keep stdout reserved for JSON-RPC
+ * traffic. All logging here goes to stderr (`console.error`).
+ */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-import 'dotenv/config'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { SERVER_INFO, loadPluggyConfig } from './config.js';
+import { registerAllTools } from './tools/index.js';
 
-const server = new McpServer({
-  name: "Pluggy API",
-  version: "1.0.0",
-});
-
-async function getPluggyAccessToken() {
-  const authResponse = await fetch('https://api.pluggy.ai/auth', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      clientId: process.env.PLUGGY_CLIENT_ID,
-      clientSecret: process.env.PLUGGY_CLIENT_SECRET
-    })
+async function main(): Promise<void> {
+  const server = new McpServer({
+    name: SERVER_INFO.name,
+    version: SERVER_INFO.version,
   });
 
-  const authJson = await authResponse.json();
-  const { apiKey } = authJson;
-  return apiKey;
+  registerAllTools(server);
+
+  // Surface a startup hint to the operator without crashing — the server
+  // can still serve `tools/list`, and individual tools will return a safe
+  // error if they're invoked without credentials.
+  if (!loadPluggyConfig()) {
+    console.error(
+      '[pluggy-mcp] PLUGGY_CLIENT_ID and/or PLUGGY_CLIENT_SECRET are not set. ' +
+        'Tools will return errors until both are configured.',
+    );
+  }
+
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error(`[pluggy-mcp] ${SERVER_INFO.name} v${SERVER_INFO.version} ready on stdio.`);
 }
 
-server.tool(
-  "getAccounts",
-  {
-    fullPrompt: z.string().describe("The complete user query about Pluggy API"),
-    itemId: z.string().describe("The Pluggy item ID to fetch accounts for"),
-  },
-  async ({ fullPrompt, itemId }) => {
-    try {
-      const accessToken = await getPluggyAccessToken();
-      const response = await fetch(`https://api.pluggy.ai/accounts?itemId=${itemId}`, {
-        headers: {
-          'X-API-KEY': accessToken,
-        }
-      })
-
-      const json = await response.json()
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Succesfully listed all accounts: ${JSON.stringify(json, null, 2)}`,
-          },
-        ],
-      };
-    } catch (err) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error fetching data ...`,
-          },
-        ],
-      };
-    }
-  },
-);
-
-server.tool(
-  "listConnectors",
-  {
-    fullPrompt: z.string().describe("The complete user query about Pluggy API connectors"),
-  },
-  async ({ fullPrompt }) => {
-    try {
-        const accessToken = await getPluggyAccessToken();
-        if (!accessToken) {
-          console.error('DEBUG: No access token received!');
-        }
-        const response = await fetch('https://api.pluggy.ai/connectors', {
-        headers: {
-                'X-API-KEY': accessToken,
-            }
-        });
-
-      const json = await response.json();
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Succesfully listed all connectors: ${JSON.stringify(json, null, 2)}`,
-          },
-        ],
-      };
-    } catch (err) {
-      console.error('DEBUG: Error in listConnectors:', err);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error fetching connectors data ... ${err}`,
-          },
-        ],
-      };
-    }
-  },
-);
-
-const transport = new StdioServerTransport();
-await server.connect(transport);
+main().catch((err) => {
+  console.error('[pluggy-mcp] fatal startup error:', err);
+  process.exit(1);
+});
