@@ -7,9 +7,13 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerListConnectorsTool } from './connectors.js';
-import { registerGetAccountsTool } from './accounts.js';
+import {
+  registerGetAccountsTool,
+  registerGetRawAccountDetailsTool,
+} from './accounts.js';
 
 export function registerAllTools(server: McpServer): void {
   registerListConnectorsTool(server);
   registerGetAccountsTool(server);
+  registerGetRawAccountDetailsTool(server);
 }

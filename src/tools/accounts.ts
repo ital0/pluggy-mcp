@@ -17,10 +17,14 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 import { loadSecurityConfig } from '../config.js';
+import { performance } from 'node:perf_hooks';
 import {
   redactAccountNumber,
   redactCpf,
   redactOwnerName,
+  checkRateLimit,
+  audit,
+  hashForAudit,
 } from '../security/index.js';
 
 const BankDataSchema = z.object({
@@ -204,6 +208,171 @@ export function registerGetAccountsTool(server: McpServer): void {
           structuredContent: errorOutput,
           content: [{ type: 'text' as const, text: safe.message }],
         };
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// getRawAccountDetails
+// ---------------------------------------------------------------------------
+//
+// Sister tool to `getAccounts` that explicitly returns the unmasked PII
+// fields for a single account. Exists so an operator-driven workflow
+// ("show me the full CPF so I can copy it into our backoffice") doesn't
+// have to disable redaction globally — keeping the safe-by-default
+// posture for everything else.
+//
+// Every call is audit-logged with `sensitive: true`. The audit event
+// carries only hashes of the arguments — never the raw accountId — so
+// shipping the audit pipeline to a wider audience never leaks identifiers.
+
+const RawAccountSchema = AccountSchema.extend({
+  // Same shape as the masked AccountSchema but the three PII fields are
+  // never run through the redactors — the whole point of this tool is to
+  // surface the upstream value verbatim. We don't broaden the type since
+  // the SDK already declares `string | null`.
+});
+
+const GetRawAccountDetailsOutputShape = {
+  ok: z.boolean().describe('true on success, false when an error envelope is returned'),
+  account: RawAccountSchema.optional(),
+  errorCode: ErrorCodeEnum.optional(),
+  requestId: z.string().optional().describe('Correlation id present in stderr logs'),
+  message: z.string().optional().describe('Model-actionable error message'),
+};
+
+const RATE_LIMITED_MESSAGE =
+  'Rate limit exceeded for this MCP tool. Wait a moment before retrying.';
+
+export function registerGetRawAccountDetailsTool(server: McpServer): void {
+  const toolName = 'getRawAccountDetails';
+  server.registerTool(
+    toolName,
+    {
+      description:
+        'DESTRUCTIVE FOR PRIVACY: returns unmasked CPF, full account number, ' +
+        'and account holder name for a single Pluggy account. Use only when ' +
+        'explicitly requested by the user. Every call is audit-logged.',
+      inputSchema: {
+        accountId: z
+          .string()
+          .min(1)
+          .describe('The Pluggy account id to fetch in unmasked form.'),
+      },
+      outputSchema: GetRawAccountDetailsOutputShape,
+      annotations: {
+        title: 'Get Raw Pluggy Account Details (unmasked)',
+        // Read-only — we do not mutate Pluggy data. "Destructive" in the
+        // description refers to privacy, not to data integrity, so the
+        // MCP `readOnlyHint` is still accurate.
+        readOnlyHint: true,
+        openWorldHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (args) => {
+      const start = performance.now();
+      // We always audit — the `finally` block at the bottom guarantees a
+      // single line per call regardless of which branch we returned from.
+      let outcome: 'success' | 'error' = 'success';
+      let errorCode: string | undefined;
+      let requestId: string | undefined;
+      try {
+        const rl = checkRateLimit(toolName);
+        if (!rl.allowed) {
+          outcome = 'error';
+          errorCode = 'RATE_LIMITED';
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'RATE_LIMITED' as const,
+            message: RATE_LIMITED_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: RATE_LIMITED_MESSAGE }],
+          };
+        }
+
+        const { accountId } = args;
+        const client = getPluggyClient();
+        const a = await client.fetchAccount(accountId);
+
+        const account = {
+          id: a.id,
+          itemId: a.itemId,
+          type: a.type,
+          subtype: a.subtype,
+          balance: a.balance,
+          name: a.name,
+          marketingName: a.marketingName,
+          currencyCode: a.currencyCode,
+          // Verbatim PII — the whole point of this tool.
+          number: a.number,
+          owner: a.owner,
+          taxNumber: a.taxNumber,
+          bankData: a.bankData,
+          creditData: a.creditData
+            ? {
+                ...a.creditData,
+                balanceCloseDate:
+                  a.creditData.balanceCloseDate instanceof Date
+                    ? a.creditData.balanceCloseDate.toISOString()
+                    : a.creditData.balanceCloseDate,
+                balanceDueDate:
+                  a.creditData.balanceDueDate instanceof Date
+                    ? a.creditData.balanceDueDate.toISOString()
+                    : a.creditData.balanceDueDate,
+              }
+            : null,
+        };
+
+        const output = { ok: true as const, account };
+        return {
+          structuredContent: output,
+          content: [
+            {
+              type: 'text' as const,
+              text: `Returned unmasked details for account ${a.id}.`,
+            },
+          ],
+        };
+      } catch (err) {
+        outcome = 'error';
+        const safe = classifyAndReport(err, {
+          tool: toolName,
+          operation: 'fetchAccount',
+        });
+        errorCode = safe.errorCode;
+        requestId = safe.requestId;
+        const errorOutput = {
+          ok: false as const,
+          errorCode: safe.errorCode,
+          requestId: safe.requestId,
+          message: safe.message,
+        };
+        return {
+          isError: true,
+          structuredContent: errorOutput,
+          content: [{ type: 'text' as const, text: safe.message }],
+        };
+      } finally {
+        const accountId = (args as { accountId?: unknown })?.accountId;
+        audit({
+          tool: toolName,
+          outcome,
+          errorCode,
+          durationMs: Math.round(performance.now() - start),
+          argsHash: hashForAudit(args),
+          // Reuse the itemIdHash field for the accountId — same intent
+          // (correlate without revealing the identifier), and saves us
+          // an extra optional field on AuditEvent.
+          itemIdHash:
+            typeof accountId === 'string' ? hashForAudit(accountId) : undefined,
+          sensitive: true,
+          requestId,
+        });
       }
     },
   );
