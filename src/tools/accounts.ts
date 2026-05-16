@@ -412,10 +412,7 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
           errorCode,
           durationMs: Math.round(performance.now() - start),
           argsHash: hashForAudit(args),
-          // Reuse the itemIdHash field for the accountId — same intent
-          // (correlate without revealing the identifier), and saves us
-          // an extra optional field on AuditEvent.
-          itemIdHash:
+          accountIdHash:
             typeof accountId === 'string' ? hashForAudit(accountId) : undefined,
           sensitive: true,
           requestId,

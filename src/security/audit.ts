@@ -25,6 +25,8 @@ export interface AuditEvent {
   argsHash?: string;
   /** Truncated SHA-256 of `args.itemId`, when present. */
   itemIdHash?: string;
+  /** Truncated SHA-256 of `args.accountId`, when present. */
+  accountIdHash?: string;
   /** True for tools that expose unmasked PII on success. */
   sensitive?: boolean;
   /** Correlation id from the error path, when available. */
