@@ -69,6 +69,34 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
   return { status, code };
 }
 
+// Pluggy's /auth handshake returns 400 — not 401 — for malformed or
+// invalid credentials, and the SDK only surfaces a raw HTTPError for
+// that pre-flight call (data calls have their non-2xx bodies caught
+// and rejected as plain objects instead). Treating a bare 400 from a
+// tool call as UNAUTHORIZED gives the model the right next step.
+const STATUS_MAP: Record<number, { errorCode: ErrorCode; message: string }> = {
+  400: {
+    errorCode: 'UNAUTHORIZED',
+    message: 'Pluggy rejected the credentials (400 on /auth). Verify PLUGGY_CLIENT_ID/SECRET.',
+  },
+  401: {
+    errorCode: 'UNAUTHORIZED',
+    message: 'Pluggy rejected the credentials (401). Rotate PLUGGY_CLIENT_ID/SECRET.',
+  },
+  403: {
+    errorCode: 'FORBIDDEN',
+    message: 'Pluggy returned 403 — premium feature or item not authorized for these credentials.',
+  },
+  404: {
+    errorCode: 'NOT_FOUND',
+    message: 'Pluggy returned 404 — the requested resource does not exist or was deleted.',
+  },
+  429: {
+    errorCode: 'RATE_LIMITED',
+    message: 'Pluggy returned 429 — rate limited. Back off and retry.',
+  },
+};
+
 /**
  * Classify an arbitrary thrown value into a `SafeError` and emit a
  * single-line structured stderr log for the operator.
@@ -120,34 +148,6 @@ export function classifyAndReport(
   const { status, code } = extractStatus(err);
   let errorCode: ErrorCode = 'UNKNOWN';
   let message = 'Unexpected error talking to Pluggy. See server logs.';
-
-  // Pluggy's /auth handshake returns 400 — not 401 — for malformed or
-  // invalid credentials, and the SDK only surfaces a raw HTTPError for
-  // that pre-flight call (data calls have their non-2xx bodies caught
-  // and rejected as plain objects instead). Treating a bare 400 from a
-  // tool call as UNAUTHORIZED gives the model the right next step.
-  const STATUS_MAP: Record<number, { errorCode: ErrorCode; message: string }> = {
-    400: {
-      errorCode: 'UNAUTHORIZED',
-      message: 'Pluggy rejected the credentials (400 on /auth). Verify PLUGGY_CLIENT_ID/SECRET.',
-    },
-    401: {
-      errorCode: 'UNAUTHORIZED',
-      message: 'Pluggy rejected the credentials (401). Rotate PLUGGY_CLIENT_ID/SECRET.',
-    },
-    403: {
-      errorCode: 'FORBIDDEN',
-      message: 'Pluggy returned 403 — premium feature or item not authorized for these credentials.',
-    },
-    404: {
-      errorCode: 'NOT_FOUND',
-      message: 'Pluggy returned 404 — the requested resource does not exist or was deleted.',
-    },
-    429: {
-      errorCode: 'RATE_LIMITED',
-      message: 'Pluggy returned 429 — rate limited. Back off and retry.',
-    },
-  };
 
   const mapped = status !== null ? STATUS_MAP[status] : undefined;
   if (mapped) {
