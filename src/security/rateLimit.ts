@@ -5,17 +5,20 @@
  *  - `minuteHits`: timestamps within the last 60s
  *  - `dayHits`:    timestamps within the last 24h
  *
- * Defaults are intentionally conservative because this server fronts a
- * paid upstream API and is also a way for a runaway agent to burn through
- * the operator's quota. Operators can override per call.
+ * Budgets come from `loadRateLimitConfig()` (env vars
+ * `PLUGGY_MCP_RATELIMIT_PER_MIN` / `PLUGGY_MCP_RATELIMIT_PER_DAY`) and
+ * are intentionally conservative because this server fronts a paid
+ * upstream API and is also a way for a runaway agent to burn through
+ * the operator's quota. Call sites do NOT pass overrides — the operator
+ * intent expressed via env is the single source of truth so no caller
+ * can silently widen the limit.
  *
  * Process-local — there's only one MCP stdio process per host, so a
  * shared in-memory map is sufficient. If we ever ship a non-stdio
  * transport we will need a distributed store; today we don't.
  */
 
-const DEFAULT_PER_MINUTE = 30;
-const DEFAULT_PER_DAY = 200;
+import { loadRateLimitConfig } from '../config.js';
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
@@ -101,12 +104,8 @@ function capHitArray(arr: number[]): void {
  * "this caller attempted N times in the last minute" rather than
  * "this caller successfully ran N times".
  */
-export function checkRateLimit(
-  toolName: string,
-  opts?: { perMinute?: number; perDay?: number },
-): RateLimitResult {
-  const perMinute = opts?.perMinute ?? DEFAULT_PER_MINUTE;
-  const perDay = opts?.perDay ?? DEFAULT_PER_DAY;
+export function checkRateLimit(toolName: string): RateLimitResult {
+  const { perMinute, perDay } = loadRateLimitConfig();
   const now = Date.now();
   const bucket = getBucket(toolName);
 

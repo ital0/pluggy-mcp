@@ -28,6 +28,20 @@ export type SecurityConfig = {
 };
 
 /**
+ * Per-tool rate-limit budgets. Sourced from env so an operator can tune
+ * them without rebuilding; defaults are conservative because the server
+ * fronts a paid upstream API. Invalid or missing values fall back to the
+ * defaults — we never throw at config load.
+ */
+export type RateLimitConfig = {
+  perMinute: number;
+  perDay: number;
+};
+
+const DEFAULT_RATE_LIMIT_PER_MINUTE = 30;
+const DEFAULT_RATE_LIMIT_PER_DAY = 200;
+
+/**
  * Cached config — `loadPluggyConfig` is called from both `main()` (for the
  * startup warning) and `getPluggyClient` (on first tool use). Reading env
  * twice is harmless, but memoizing keeps the call sites cheap and makes
@@ -35,6 +49,7 @@ export type SecurityConfig = {
  */
 let cached: PluggyConfig | null = null;
 let cachedSecurity: SecurityConfig | null = null;
+let cachedRateLimit: RateLimitConfig | null = null;
 
 /**
  * Load Pluggy credentials. Returns `null` when either credential is missing
@@ -86,6 +101,40 @@ export function loadSecurityConfig(): SecurityConfig {
     rateLimit: process.env.PLUGGY_MCP_RATELIMIT !== 'false',
   };
   return cachedSecurity;
+}
+
+/**
+ * Read per-tool rate-limit budgets from `PLUGGY_MCP_RATELIMIT_PER_MIN`
+ * and `PLUGGY_MCP_RATELIMIT_PER_DAY`. Values are parsed as base-10
+ * integers; anything non-positive or non-numeric falls back to the
+ * defaults silently. We deliberately do NOT throw — a typo in env must
+ * not crash the stdio transport at startup.
+ *
+ * Memoized for the same reason as `loadSecurityConfig`: env is a
+ * once-per-process input. Sourcing the budgets here (rather than from
+ * a per-call `opts` arg) ensures every tool sees the same operator
+ * intent — there is no path for a caller to silently widen the limit.
+ */
+export function loadRateLimitConfig(): RateLimitConfig {
+  if (cachedRateLimit) return cachedRateLimit;
+  cachedRateLimit = {
+    perMinute: parsePositiveInt(
+      process.env.PLUGGY_MCP_RATELIMIT_PER_MIN,
+      DEFAULT_RATE_LIMIT_PER_MINUTE,
+    ),
+    perDay: parsePositiveInt(
+      process.env.PLUGGY_MCP_RATELIMIT_PER_DAY,
+      DEFAULT_RATE_LIMIT_PER_DAY,
+    ),
+  };
+  return cachedRateLimit;
+}
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return n;
 }
 
 /**
