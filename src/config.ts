@@ -8,6 +8,7 @@
  */
 
 import 'dotenv/config';
+import { logEvent } from './util/log.js';
 
 export type PluggyConfig = {
   clientId: string;
@@ -147,15 +148,11 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
  */
 export function logSecurityConfig(): void {
   const cfg = loadSecurityConfig();
-  console.error(
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      event: 'security_config',
-      redact: cfg.redact,
-      audit: cfg.audit,
-      rateLimit: cfg.rateLimit,
-    }),
-  );
+  logEvent('security_config', {
+    redact: cfg.redact,
+    audit: cfg.audit,
+    rateLimit: cfg.rateLimit,
+  });
   if (!cfg.redact) {
     console.error(
       '[pluggy-mcp] WARN: PII redaction DISABLED — raw CPF/account numbers will reach the LLM context. ' +

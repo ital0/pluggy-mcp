@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 import { loadSecurityConfig } from '../config.js';
+import { logEvent } from '../util/log.js';
 import { performance } from 'node:perf_hooks';
 import {
   redactAccountNumber,
@@ -202,18 +203,14 @@ export function registerGetAccountsTool(server: McpServer): void {
         const truncated = total > accounts.length;
 
         if (truncated) {
-          console.error(
-            JSON.stringify({
-              ts: new Date().toISOString(),
-              tool: 'getAccounts',
-              event: 'truncated',
-              // Hashed for consistency with audit events — raw itemIds
-              // don't appear in stderr.
-              itemIdHash: hashForAudit(itemId),
-              total,
-              returned: accounts.length,
-            }),
-          );
+          // Hashed itemId for consistency with audit events — raw itemIds
+          // don't appear in stderr.
+          logEvent('truncated', {
+            tool: 'getAccounts',
+            itemIdHash: hashForAudit(itemId),
+            total,
+            returned: accounts.length,
+          });
         }
 
         const output = {

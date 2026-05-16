@@ -19,6 +19,7 @@
  */
 
 import { loadRateLimitConfig } from '../config.js';
+import { logEvent } from '../util/log.js';
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
@@ -84,15 +85,11 @@ function warnOnceIfOverflow(toolName: string, len: number): void {
   if (len <= HIT_ARRAY_HARD_CAP) return;
   if (overflowWarned.has(toolName)) return;
   overflowWarned.add(toolName);
-  console.error(
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      event: 'rate_limit_overflow',
-      tool: toolName,
-      len,
-      msg: 'rate-limit hit buffer is large; check perMinute/perDay overrides',
-    }),
-  );
+  logEvent('rate_limit_overflow', {
+    tool: toolName,
+    len,
+    msg: 'rate-limit hit buffer is large; check perMinute/perDay overrides',
+  });
 }
 
 /**
@@ -167,13 +164,7 @@ export function checkRateLimit(toolName: string): RateLimitResult {
  */
 export function __resetRateLimits(): void {
   if (process.env.NODE_ENV !== 'test') {
-    console.error(
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        event: 'reset_blocked',
-        reason: 'NODE_ENV !== test',
-      }),
-    );
+    logEvent('reset_blocked', { reason: 'NODE_ENV !== test' });
     return;
   }
   buckets.clear();

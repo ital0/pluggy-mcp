@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 import { loadSecurityConfig } from '../config.js';
+import { logEvent } from '../util/log.js';
 import {
   audit,
   checkRateLimit,
@@ -166,15 +167,11 @@ export function registerListConnectorsTool(server: McpServer): void {
           // Signal to operators that pagination is missing — the LLM also
           // sees `truncated: true` in structuredContent (full pagination
           // ships in PR3+).
-          console.error(
-            JSON.stringify({
-              ts: new Date().toISOString(),
-              tool: 'listConnectors',
-              event: 'truncated',
-              total,
-              returned: connectors.length,
-            }),
-          );
+          logEvent('truncated', {
+            tool: 'listConnectors',
+            total,
+            returned: connectors.length,
+          });
         }
 
         const output = {
