@@ -71,6 +71,15 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
  * no HTTP body, and no environment data. Set `PLUGGY_MCP_DEBUG=1` to
  * additionally dump the raw error object to stderr — useful when an
  * operator is actively diagnosing an issue, never on by default.
+ *
+ * SECURITY: never include upstream-derived strings in the user-facing
+ * message. Pluggy error messages could contain markdown or
+ * instruction-like content that would become an indirect prompt-injection
+ * vector in the LLM context. Every branch below assigns a hardcoded
+ * string constant — no interpolation of `err.message`, `err.response.body`,
+ * or `(err as Error).message`. The stderr log can still carry upstream
+ * fields (gated by PLUGGY_MCP_DEBUG), but the LLM-facing channel must
+ * stay 100% server-controlled.
  */
 export function classifyAndReport(
   err: unknown,
@@ -135,7 +144,10 @@ export function classifyAndReport(
     message = 'Pluggy returned a transient server error. Retry shortly.';
   } else if (code === 'ETIMEDOUT' || code === 'ECONNRESET' || code === 'ENOTFOUND') {
     errorCode = 'NETWORK';
-    message = `Network error talking to Pluggy (${code}). Retry shortly.`;
+    // Hardcoded — do not interpolate `code` into the LLM-facing string,
+    // even though it's constrained to the three values above. The exact
+    // syscall code is available to the operator in the stderr log.
+    message = 'Network error talking to Pluggy. Retry shortly.';
   }
 
   // 3) Structured single-line stderr log. We deliberately do NOT include
