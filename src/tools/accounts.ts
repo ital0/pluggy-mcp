@@ -70,6 +70,10 @@ const GetAccountsOutputShape = {
   message: z.string().optional().describe('Model-actionable error message'),
 };
 
+function toIsoIfDate<T>(value: T | Date): T | string {
+  return value instanceof Date ? value.toISOString() : value;
+}
+
 export function registerGetAccountsTool(server: McpServer): void {
   server.registerTool(
     'getAccounts',
@@ -115,14 +119,8 @@ export function registerGetAccountsTool(server: McpServer): void {
           creditData: a.creditData
             ? {
                 ...a.creditData,
-                balanceCloseDate:
-                  a.creditData.balanceCloseDate instanceof Date
-                    ? a.creditData.balanceCloseDate.toISOString()
-                    : a.creditData.balanceCloseDate,
-                balanceDueDate:
-                  a.creditData.balanceDueDate instanceof Date
-                    ? a.creditData.balanceDueDate.toISOString()
-                    : a.creditData.balanceDueDate,
+                balanceCloseDate: toIsoIfDate(a.creditData.balanceCloseDate),
+                balanceDueDate: toIsoIfDate(a.creditData.balanceDueDate),
               }
             : null,
         }));
