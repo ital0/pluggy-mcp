@@ -410,6 +410,10 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
       let errorCode: string | undefined;
       let requestId: string | undefined;
       let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
+      // Default false; flipped to true ONLY when we reach the SDK call.
+      // Gate denials (toggle off, allowlist, rate-limit) emit a
+      // non-sensitive line — no PII was at risk for those paths.
+      let sensitive = false;
       try {
         const sec = loadSecurityConfig();
         const rl = sec.rateLimit
@@ -464,6 +468,9 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
           };
         }
 
+        // Past all gates — an SDK call is about to happen (success or
+        // upstream error). From here on, the audit line is sensitive.
+        sensitive = true;
         const client = getPluggyClient();
         const i = await client.fetchIdentityByItemId(itemId);
         const identity = mapIdentity(i as unknown as IdentityLike, sec.redact);
@@ -507,10 +514,10 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
           errorCode,
           durationMs: Math.round(performance.now() - start),
           ...hashArgsSafely({ itemId }, ['itemId']),
-          // sensitive=true is unbypassable — even when the operator
-          // disables non-sensitive audit globally, this line always
-          // emits to stderr. Same posture as `getRawAccountDetails`.
-          sensitive: true,
+          // sensitive=true is unbypassable on the SDK-touched path —
+          // even when the operator disables non-sensitive audit
+          // globally, that line always emits to stderr.
+          sensitive,
           requestId,
           rateLimitReason,
         });
@@ -556,6 +563,9 @@ export function registerGetIdentityTool(server: McpServer): void {
       let errorCode: string | undefined;
       let requestId: string | undefined;
       let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
+      // Default false; flipped to true ONLY when we reach the SDK call.
+      // Gate denials (toggle off, rate-limit) emit a non-sensitive line.
+      let sensitive = false;
       try {
         const sec = loadSecurityConfig();
         const rl = sec.rateLimit
@@ -592,6 +602,8 @@ export function registerGetIdentityTool(server: McpServer): void {
           };
         }
 
+        // Past all gates — an SDK call is about to happen.
+        sensitive = true;
         const client = getPluggyClient();
         const i = await client.fetchIdentity(identityId);
         const identity = mapIdentity(i as unknown as IdentityLike, sec.redact);
@@ -629,7 +641,7 @@ export function registerGetIdentityTool(server: McpServer): void {
           errorCode,
           durationMs: Math.round(performance.now() - start),
           ...hashArgsSafely({ identityId }, ['identityId']),
-          sensitive: true,
+          sensitive,
           requestId,
           rateLimitReason,
         });
