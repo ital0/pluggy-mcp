@@ -1,5 +1,18 @@
 /**
- * PII redactors.
+ * PII redaction helpers for the Pluggy MCP security layer.
+ *
+ * All redactors are exported as security primitives even when no current tool
+ * calls them. They are foundational for upcoming tools that will consume PII
+ * fields:
+ *   - redactCpf — used today by getAccounts; transactions, identity will reuse
+ *   - redactAccountNumber — used today by getAccounts; bills will reuse
+ *   - redactCardNumber — for bills (credit card faturas), credit card transactions
+ *   - redactOwnerName — used today by getAccounts; identity will reuse
+ *   - redactEmail — for identity, transactions (payer/receiver), recurring-payments
+ *   - redactPhone — for identity
+ *
+ * Do not delete these because they appear unused — they are the canonical
+ * masking implementations and must not be re-invented per-tool.
  *
  * Every redactor returns:
  *   - `null` when the input is `null` or `undefined`
@@ -72,6 +85,8 @@ export function redactAccountNumber(number?: string | null): string | null {
  * PAN (card number): keep the last 4 digits only.
  * Mirrors `redactAccountNumber` — kept as its own function so call sites
  * read clearly at the redaction point ("we are masking a card here").
+ *
+ * Security primitive — exported for upcoming tools (transactions/bills/identity).
  */
 export function redactCardNumber(pan?: string | null): string | null {
   if (pan === null || pan === undefined) return null;
@@ -156,6 +171,8 @@ export function redactOwnerName(name?: string | null): string | null {
  * shape is idempotent: re-running over `"ita***@x.com"` takes the first 3
  * chars `"ita"` and re-emits `"ita***@x.com"`. We do not trust inputs
  * that merely look masked.
+ *
+ * Security primitive — exported for upcoming tools (transactions/bills/identity).
  */
 export function redactEmail(email?: string | null): string | null {
   if (email === null || email === undefined) return null;
@@ -180,6 +197,8 @@ export function redactEmail(email?: string | null): string | null {
  * Always runs unconditionally. The masked form `****1234` strips to
  * `1234`, which re-emits as `****1234` — idempotent on its own output
  * without trusting an input that merely looks masked.
+ *
+ * Security primitive — exported for upcoming tools (transactions/bills/identity).
  */
 export function redactPhone(phone?: string | null): string | null {
   if (phone === null || phone === undefined) return null;
