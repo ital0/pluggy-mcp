@@ -116,11 +116,12 @@ export function registerGetAccountsTool(server: McpServer): void {
     'getAccounts',
     {
       description:
+        UNTRUSTED_PREAMBLE +
+        '\n\n' +
         'Retrieve all accounts (bank, credit card, etc.) belonging to a given ' +
         'Pluggy Item. An Item represents one user-institution connection — call ' +
         '`listConnectors` first to discover institutions and create items via the ' +
-        'Pluggy dashboard or your own backend to obtain an `itemId`.\n\n' +
-        UNTRUSTED_PREAMBLE,
+        'Pluggy dashboard or your own backend to obtain an `itemId`.',
       inputSchema: {
         itemId: z
           .string()
@@ -307,10 +308,11 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
     toolName,
     {
       description:
+        UNTRUSTED_PREAMBLE +
+        '\n\n' +
         'DESTRUCTIVE FOR PRIVACY: returns unmasked CPF, full account number, ' +
         'and account holder name for a single Pluggy account. Use only when ' +
-        'explicitly requested by the user. Every call is audit-logged.\n\n' +
-        UNTRUSTED_PREAMBLE,
+        'explicitly requested by the user. Every call is audit-logged.',
       inputSchema: {
         accountId: z
           .string()

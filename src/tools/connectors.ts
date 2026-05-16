@@ -89,10 +89,11 @@ export function registerListConnectorsTool(server: McpServer): void {
     'listConnectors',
     {
       description:
+        UNTRUSTED_PREAMBLE +
+        '\n\n' +
         'List all financial institutions (connectors) available through Pluggy. ' +
         'Use this to discover which banks, brokers, and other institutions a user ' +
-        'can link, and to obtain the `connectorId` needed to create an item.\n\n' +
-        UNTRUSTED_PREAMBLE,
+        'can link, and to obtain the `connectorId` needed to create an item.',
       inputSchema: {
         // Intentionally empty — `GET /connectors` returns the full list and
         // server-side filters live on a follow-up tool (added in PR2+).
