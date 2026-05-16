@@ -58,6 +58,33 @@ async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(`[pluggy-mcp] ${SERVER_INFO.name} v${SERVER_INFO.version} ready on stdio.`);
+
+  // Graceful shutdown: respect MCP host lifecycle signals so any in-flight
+  // requests get a chance to finish and the stdio pipe is closed cleanly.
+  // A once-only guard prevents a double-signal (e.g. Ctrl-C twice) from
+  // racing through `server.close()` twice.
+  let shuttingDown = false;
+  async function shutdown(signal: string): Promise<void> {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.error(
+      JSON.stringify({ ts: new Date().toISOString(), event: 'shutdown', signal }),
+    );
+    try {
+      await server.close();
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          event: 'shutdown_error',
+          message: (err as Error)?.message ?? null,
+        }),
+      );
+    }
+    process.exit(0);
+  }
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
 main().catch((err) => {
