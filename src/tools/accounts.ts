@@ -771,9 +771,12 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              // Numeric value is non-PII; safe to include in the free-text
-              // channel for a quick "what's the balance" summary.
-              text: `Real-time balance: ${b.balance} ${b.currencyCode} (updated ${b.updateDateTime}).`,
+              // Keep balance/currency out of the free-text channel — they
+              // leak into transcripts and conversation summaries. The
+              // structured channel still carries the full value for any
+              // tool that needs it. Consistent with other tools that keep
+              // ids and values out of the text line.
+              text: 'Real-time balance retrieved.',
             },
           ],
         };
