@@ -8,6 +8,13 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { classifyAndReport } from '../util/errors.js';
 
+// NOTE: PII fields (taxNumber/CPF, owner full name, full account number, email, phone, address)
+// are intentionally omitted from PR1's output. They will be added back in PR2 with proper masking
+// (e.g. taxNumber -> ***.***.***-NN, number -> ****-NNNN, owner -> first name + initial).
+// Per pluggy-sdk types, the only PII fields actually exposed by the Account/BankData/CreditData
+// shapes are `number`, `owner`, and `taxNumber`. Email/phone/address aren't on the SDK type at
+// all, but the omit list above documents intent for PR2.
+
 const BankDataSchema = z.object({
   transferNumber: z.string().nullable(),
   closingBalance: z.number().nullable(),
@@ -35,12 +42,9 @@ const AccountSchema = z.object({
   itemId: z.string().describe('Parent Pluggy Item id'),
   type: z.enum(['BANK', 'CREDIT']),
   subtype: z.enum(['SAVINGS_ACCOUNT', 'CHECKING_ACCOUNT', 'CREDIT_CARD']),
-  number: z.string().describe('Institution-issued account number'),
   balance: z.number().describe('Current balance in account currency'),
   name: z.string().describe('Account name / description'),
   marketingName: z.string().nullable(),
-  owner: z.string().nullable(),
-  taxNumber: z.string().nullable(),
   currencyCode: z.string().describe('ISO 4217 currency code'),
   bankData: BankDataSchema.nullable(),
   creditData: CreditDataSchema.nullable(),
@@ -105,17 +109,16 @@ export function registerGetAccountsTool(server: McpServer): void {
         const client = getPluggyClient();
         const page = await client.fetchAccounts(itemId);
 
+        // Explicit field-by-field mapping: PII fields (number, owner, taxNumber)
+        // are intentionally NOT forwarded — they'll come back in PR2 with masking.
         const accounts = page.results.map((a) => ({
           id: a.id,
           itemId: a.itemId,
           type: a.type,
           subtype: a.subtype,
-          number: a.number,
           balance: a.balance,
           name: a.name,
           marketingName: a.marketingName,
-          owner: a.owner,
-          taxNumber: a.taxNumber,
           currencyCode: a.currencyCode,
           bankData: a.bankData,
           // The SDK returns Date for credit-card balance dates; serialise to
