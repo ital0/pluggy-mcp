@@ -484,7 +484,13 @@ export function registerListTransactionsTool(server: McpServer): void {
         // empty page would not signal "you went too far" to the LLM, and
         // a clear errorCode lets it pivot (e.g. clamp `page` to
         // `totalPages` and retry). Hardcoded message; no upstream content.
-        if (totalPages > 0 && effectivePage > totalPages) {
+        //
+        // We compare against `max(totalPages, 1)` to defensively handle
+        // an inconsistent SDK response where `totalPages === 0` AND the
+        // results array is empty (treat page 1 as still valid). The
+        // separate guard below catches the other inconsistent shape
+        // (`totalPages === 0` with non-empty results).
+        if (effectivePage > Math.max(totalPages, 1)) {
           outcome = 'error';
           errorCode = 'NOT_FOUND';
           const message = `Requested page ${effectivePage} exceeds totalPages ${totalPages}.`;
@@ -498,6 +504,16 @@ export function registerListTransactionsTool(server: McpServer): void {
             structuredContent: errorOutput,
             content: [{ type: 'text' as const, text: message }],
           };
+        }
+
+        if (totalPages === 0 && transactions.length > 0) {
+          // SDK returned an inconsistent shape: a non-empty results array
+          // with totalPages=0. Surface the data anyway (it's real) but
+          // log so an operator can see the upstream weirdness.
+          logEvent('inconsistent_totalpages', {
+            tool: toolName,
+            resultsLength: transactions.length,
+          });
         }
 
         const truncated = effectivePage < totalPages;
