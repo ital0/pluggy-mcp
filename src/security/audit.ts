@@ -11,6 +11,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { loadSecurityConfig } from '../config.js';
 
 export interface AuditEvent {
   /** Tool name as registered with the MCP server. */
@@ -81,7 +82,18 @@ export function hashForAudit(value: unknown): string {
  * no async, no awaiting; meant to be safe in a `finally` block.
  */
 export function audit(ev: AuditEvent): void {
-  if (process.env.PLUGGY_MCP_AUDIT === 'false') return;
+  // Sensitive events are NEVER suppressible — even when the operator
+  // disabled audit globally, calls that expose PII must still produce
+  // an audit trail. Non-sensitive events respect the cached toggle from
+  // `loadSecurityConfig()` so it stays consistent with other controls
+  // (avoiding the case where env was mutated mid-process).
+  let cfg = { audit: true };
+  try {
+    cfg = loadSecurityConfig();
+  } catch {
+    // If config can't be loaded, fail open: emit the event.
+  }
+  if (!ev.sensitive && !cfg.audit) return;
   try {
     const line = {
       ts: new Date().toISOString(),

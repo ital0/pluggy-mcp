@@ -113,6 +113,15 @@ export function logSecurityConfig(): void {
         'Set PLUGGY_MCP_REDACT=true to enable.',
     );
   }
+  if (!cfg.audit) {
+    // Sensitive-event audit lines are still emitted unconditionally (see
+    // `audit()` in src/security/audit.ts) — this WARN flags only the
+    // suppression of routine, non-sensitive audit traffic.
+    console.error(
+      '[pluggy-mcp] WARN: audit logging DISABLED — non-sensitive tool calls will not be recorded. ' +
+        'Set PLUGGY_MCP_AUDIT=true to enable. (Sensitive-event audit is unbypassable.)',
+    );
+  }
 }
 
 /**
