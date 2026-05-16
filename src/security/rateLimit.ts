@@ -20,8 +20,14 @@ const DEFAULT_PER_DAY = 200;
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
 
-/** Cap on per-tool hit arrays. Crosses ~10x the default day budget. */
-const HIT_ARRAY_HARD_CAP = 1000;
+/**
+ * Hard cap on per-tool hit arrays. Comfortably above the worst-case
+ * legitimate traffic over the day window (25x the default day budget),
+ * but bounded so an unbounded misconfiguration can't blow process memory.
+ * On overflow we drop the oldest hits — newer timestamps are more
+ * informative for the sliding window than ancient ones.
+ */
+const HIT_ARRAY_HARD_CAP = 5000;
 
 export interface RateLimitResult {
   /** True when the call is allowed to proceed. */
@@ -76,6 +82,17 @@ function warnOnceIfOverflow(toolName: string, len: number): void {
 }
 
 /**
+ * Enforce the hard cap on a hit array by dropping the oldest entries.
+ * Called after every push so a runaway caller can never grow memory
+ * unbounded between window prunes.
+ */
+function capHitArray(arr: number[]): void {
+  if (arr.length > HIT_ARRAY_HARD_CAP) {
+    arr.splice(0, arr.length - HIT_ARRAY_HARD_CAP);
+  }
+}
+
+/**
  * Check the rate-limit status for a tool call and record the attempt.
  *
  * IMPORTANT: this records the hit even when the call is denied. That is
@@ -102,6 +119,8 @@ export function checkRateLimit(
     bucket.minuteHits.push(now);
     bucket.dayHits.push(now);
     warnOnceIfOverflow(toolName, bucket.dayHits.length);
+    capHitArray(bucket.minuteHits);
+    capHitArray(bucket.dayHits);
     return { allowed: false, retryAfterMs, reason: 'PER_MINUTE' };
   }
 
@@ -110,12 +129,16 @@ export function checkRateLimit(
     bucket.minuteHits.push(now);
     bucket.dayHits.push(now);
     warnOnceIfOverflow(toolName, bucket.dayHits.length);
+    capHitArray(bucket.minuteHits);
+    capHitArray(bucket.dayHits);
     return { allowed: false, retryAfterMs, reason: 'PER_DAY' };
   }
 
   bucket.minuteHits.push(now);
   bucket.dayHits.push(now);
   warnOnceIfOverflow(toolName, bucket.dayHits.length);
+  capHitArray(bucket.minuteHits);
+  capHitArray(bucket.dayHits);
   return { allowed: true };
 }
 
