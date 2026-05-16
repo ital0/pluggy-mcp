@@ -16,7 +16,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
-import { loadSecurityConfig } from '../config.js';
+import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import { performance } from 'node:perf_hooks';
 import {
@@ -31,6 +31,7 @@ import {
   UNTRUSTED_PREAMBLE,
   LOCAL_RATE_LIMITED_MESSAGE,
 } from '../security/index.js';
+import { ITEM_NOT_ALLOWED_MESSAGE } from './items.js';
 
 const BankDataSchema = z.object({
   transferNumber: z.string().nullable(),
@@ -115,12 +116,14 @@ export function registerGetAccountsTool(server: McpServer): void {
         'Retrieve all accounts (bank, credit card, etc.) belonging to a given ' +
         'Pluggy Item. An Item represents one user-institution connection — call ' +
         '`listConnectors` first to discover institutions and create items via the ' +
-        'Pluggy dashboard or your own backend to obtain an `itemId`.',
+        'Pluggy dashboard or your own backend to obtain an `itemId`. ' +
+        'When the server is configured with PLUGGY_ITEM_IDS, only itemIds in the ' +
+        'allowlist will be fetched; others return a FORBIDDEN envelope.',
       inputSchema: {
         itemId: z
           .string()
-          .min(1)
-          .describe('The Pluggy Item id whose accounts should be fetched.'),
+          .uuid()
+          .describe('The Pluggy Item id (UUID) whose accounts should be fetched.'),
       },
       outputSchema: GetAccountsOutputShape,
       annotations: {
@@ -159,6 +162,24 @@ export function registerGetAccountsTool(server: McpServer): void {
             isError: true,
             structuredContent: errorOutput,
             content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
+          };
+        }
+
+        // Allowlist check BEFORE building the client — keeps the SDK call
+        // count and Pluggy's billable usage to zero for denied ids. Mirror
+        // of the gate inside `getItem` / `listConsents`.
+        if (!isItemAllowed(itemId)) {
+          outcome = 'error';
+          errorCode = 'FORBIDDEN';
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'FORBIDDEN' as const,
+            message: ITEM_NOT_ALLOWED_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: ITEM_NOT_ALLOWED_MESSAGE }],
           };
         }
 
