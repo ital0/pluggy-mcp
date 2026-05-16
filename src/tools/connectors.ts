@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
-import { toSafeError } from '../util/errors.js';
+import { classifyAndReport } from '../util/errors.js';
 
 // Subset of the SDK's Connector shape — we expose only stable fields that
 // are useful for an LLM picking a connector. The SDK adds new optional
@@ -47,10 +47,37 @@ const ConnectorSchema = z.object({
     .describe('Real-time connector availability'),
 });
 
-const ListConnectorsOutputSchema = z.object({
-  total: z.number().describe('Total connectors returned'),
-  connectors: z.array(ConnectorSchema),
-});
+const ErrorCodeEnum = z.enum([
+  'MISSING_CREDENTIALS',
+  'UNAUTHORIZED',
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'RATE_LIMITED',
+  'UPSTREAM_5XX',
+  'NETWORK',
+  'UNKNOWN',
+]);
+
+// `outputSchema` is wrapped by the SDK in `z.object(...)`, so we can't pass
+// a `z.discriminatedUnion`. Instead we declare a flat shape that contains
+// fields from both the success and error variants, with `ok` as the
+// discriminator. Variant-specific fields are optional at the SDK level;
+// the tool callback always emits one consistent shape per branch so
+// downstream consumers can switch on `ok` reliably.
+const ListConnectorsOutputShape = {
+  ok: z.boolean().describe('true on success, false when an error envelope is returned'),
+  // Success-only fields.
+  total: z.number().optional().describe('Total connectors reported by Pluggy'),
+  truncated: z
+    .boolean()
+    .optional()
+    .describe('True when more results exist than were returned (page 1 only).'),
+  connectors: z.array(ConnectorSchema).optional(),
+  // Error-only fields.
+  errorCode: ErrorCodeEnum.optional(),
+  requestId: z.string().optional().describe('Correlation id present in stderr logs'),
+  message: z.string().optional().describe('Model-actionable error message'),
+};
 
 export function registerListConnectorsTool(server: McpServer): void {
   server.registerTool(
@@ -64,7 +91,7 @@ export function registerListConnectorsTool(server: McpServer): void {
         // Intentionally empty — `GET /connectors` returns the full list and
         // server-side filters live on a follow-up tool (added in PR2+).
       },
-      outputSchema: ListConnectorsOutputSchema.shape,
+      outputSchema: ListConnectorsOutputShape,
       annotations: {
         title: 'List Pluggy Connectors',
         readOnlyHint: true,
@@ -101,8 +128,28 @@ export function registerListConnectorsTool(server: McpServer): void {
           },
         }));
 
+        const total = page.total ?? connectors.length;
+        const truncated = total > connectors.length;
+
+        if (truncated) {
+          // Signal to operators that pagination is missing — the LLM also
+          // sees `truncated: true` in structuredContent (full pagination
+          // ships in PR3+).
+          console.error(
+            JSON.stringify({
+              ts: new Date().toISOString(),
+              tool: 'listConnectors',
+              event: 'truncated',
+              total,
+              returned: connectors.length,
+            }),
+          );
+        }
+
         const output = {
-          total: page.total ?? connectors.length,
+          ok: true as const,
+          total,
+          truncated,
           connectors,
         };
 
@@ -111,14 +158,28 @@ export function registerListConnectorsTool(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Found ${output.connectors.length} Pluggy connector(s).`,
+              text: truncated
+                ? `Found ${output.connectors.length} of ${total} Pluggy connector(s) (truncated; pagination ships in a later PR).`
+                : `Found ${output.connectors.length} Pluggy connector(s).`,
             },
           ],
         };
       } catch (err) {
-        const safe = toSafeError(err, { tool: 'listConnectors', operation: 'fetchConnectors' });
+        const safe = classifyAndReport(err, {
+          tool: 'listConnectors',
+          operation: 'fetchConnectors',
+        });
+        // Must include `structuredContent` even on errors when an
+        // `outputSchema` is declared — the SDK throws McpError otherwise.
+        const errorOutput = {
+          ok: false as const,
+          errorCode: safe.errorCode,
+          requestId: safe.requestId,
+          message: safe.message,
+        };
         return {
           isError: true,
+          structuredContent: errorOutput,
           content: [{ type: 'text' as const, text: safe.message }],
         };
       }

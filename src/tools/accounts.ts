@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
-import { toSafeError } from '../util/errors.js';
+import { classifyAndReport } from '../util/errors.js';
 
 const BankDataSchema = z.object({
   transferNumber: z.string().nullable(),
@@ -46,11 +46,36 @@ const AccountSchema = z.object({
   creditData: CreditDataSchema.nullable(),
 });
 
-const GetAccountsOutputSchema = z.object({
-  itemId: z.string().describe('Echo of the requested itemId'),
-  total: z.number(),
-  accounts: z.array(AccountSchema),
-});
+const ErrorCodeEnum = z.enum([
+  'MISSING_CREDENTIALS',
+  'UNAUTHORIZED',
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'RATE_LIMITED',
+  'UPSTREAM_5XX',
+  'NETWORK',
+  'UNKNOWN',
+]);
+
+// Flat output shape — `z.discriminatedUnion` can't be passed to
+// `registerTool`'s `outputSchema` because the SDK wraps the argument in
+// `z.object(...)`. Both branches still share a single discriminator
+// (`ok`) and the tool callback emits a consistent shape per branch.
+const GetAccountsOutputShape = {
+  ok: z.boolean().describe('true on success, false when an error envelope is returned'),
+  // Success-only fields.
+  itemId: z.string().optional().describe('Echo of the requested itemId'),
+  total: z.number().optional(),
+  truncated: z
+    .boolean()
+    .optional()
+    .describe('True when more results exist than were returned (page 1 only).'),
+  accounts: z.array(AccountSchema).optional(),
+  // Error-only fields.
+  errorCode: ErrorCodeEnum.optional(),
+  requestId: z.string().optional().describe('Correlation id present in stderr logs'),
+  message: z.string().optional().describe('Model-actionable error message'),
+};
 
 export function registerGetAccountsTool(server: McpServer): void {
   server.registerTool(
@@ -67,7 +92,7 @@ export function registerGetAccountsTool(server: McpServer): void {
           .min(1)
           .describe('The Pluggy Item id whose accounts should be fetched.'),
       },
-      outputSchema: GetAccountsOutputSchema.shape,
+      outputSchema: GetAccountsOutputShape,
       annotations: {
         title: 'Get Pluggy Accounts',
         readOnlyHint: true,
@@ -110,9 +135,27 @@ export function registerGetAccountsTool(server: McpServer): void {
             : null,
         }));
 
+        const total = page.total ?? accounts.length;
+        const truncated = total > accounts.length;
+
+        if (truncated) {
+          console.error(
+            JSON.stringify({
+              ts: new Date().toISOString(),
+              tool: 'getAccounts',
+              event: 'truncated',
+              itemId,
+              total,
+              returned: accounts.length,
+            }),
+          );
+        }
+
         const output = {
+          ok: true as const,
           itemId,
-          total: page.total ?? accounts.length,
+          total,
+          truncated,
           accounts,
         };
 
@@ -121,14 +164,26 @@ export function registerGetAccountsTool(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Found ${output.accounts.length} account(s) for item ${itemId}.`,
+              text: truncated
+                ? `Found ${output.accounts.length} of ${total} account(s) for item ${itemId} (truncated; pagination ships in a later PR).`
+                : `Found ${output.accounts.length} account(s) for item ${itemId}.`,
             },
           ],
         };
       } catch (err) {
-        const safe = toSafeError(err, { tool: 'getAccounts', operation: 'fetchAccounts' });
+        const safe = classifyAndReport(err, {
+          tool: 'getAccounts',
+          operation: 'fetchAccounts',
+        });
+        const errorOutput = {
+          ok: false as const,
+          errorCode: safe.errorCode,
+          requestId: safe.requestId,
+          message: safe.message,
+        };
         return {
           isError: true,
+          structuredContent: errorOutput,
           content: [{ type: 'text' as const, text: safe.message }],
         };
       }
