@@ -429,11 +429,12 @@ export function registerGetInsightsBookTool(server: McpServer): void {
           outcome,
           errorCode,
           durationMs: Math.round(performance.now() - start),
-          // We hash the FULL args object (so `argsHash` correlates calls
-          // with the same itemIds list) but explicitly list no per-field
-          // hash because `itemIds` is an array — `hashArgsSafely`'s
-          // per-field branch only hashes string fields.
-          ...hashArgsSafely(args, []),
+          // Hashes both the full args object (`argsHash`) and the
+          // `itemIds` array as one field — `hashArgsSafely` handles
+          // arrays by hashing the array as a single value, so the
+          // resulting `itemIdsHash` correlates calls with the same
+          // ordered list of itemIds.
+          ...hashArgsSafely(args, ['itemIds']),
           sensitive,
           requestId,
           rateLimitReason,

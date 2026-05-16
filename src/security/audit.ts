@@ -42,6 +42,8 @@ export interface AuditEvent {
   investmentIdHash?: string;
   /** Truncated SHA-256 of `args.identityId`, when present. */
   identityIdHash?: string;
+  /** Truncated SHA-256 of `args.itemIds` (array), when present. */
+  itemIdsHash?: string;
   /** Truncated SHA-256 of `args.from`, when present (transactions date range). */
   fromHash?: string;
   /** Truncated SHA-256 of `args.to`, when present (transactions date range). */
@@ -78,6 +80,12 @@ export function hashArgsSafely(
       if (!Object.hasOwn(obj, field)) continue;
       const v = obj[field];
       if (typeof v === 'string') {
+        out[`${field}Hash`] = hashForAudit(v);
+      } else if (Array.isArray(v)) {
+        // Hash the whole array as one field — preserves order so two
+        // calls with the same itemIds in the same order correlate, and
+        // a reorder still produces a different hash (intentional: the
+        // operator may want to spot reorderings).
         out[`${field}Hash`] = hashForAudit(v);
       }
     }
@@ -141,6 +149,7 @@ export function audit(ev: AuditEvent): void {
       loanIdHash: ev.loanIdHash,
       investmentIdHash: ev.investmentIdHash,
       identityIdHash: ev.identityIdHash,
+      itemIdsHash: ev.itemIdsHash,
       fromHash: ev.fromHash,
       toHash: ev.toHash,
       sensitive: ev.sensitive,
