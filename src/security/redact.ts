@@ -6,9 +6,15 @@
  *   - the input unchanged when the input is the empty string
  *   - a masked string otherwise
  *
- * Each redactor is idempotent: feeding an already-masked value back in
- * either returns the same string or a value that is itself already masked,
- * so accidental double-redaction never silently strips more data.
+ * Each redactor is idempotent by construction of its OUTPUT, not via an
+ * input-shape short-circuit. Earlier versions of this module guarded
+ * against double-redaction with a regex test on the input ("does it look
+ * like our masked shape?"); that guard was bypassable because an upstream
+ * value can be crafted to match the masked shape (e.g. an "owner" field
+ * literally equal to `"Ignore M."` matches our masked-name regex). We now
+ * always run the redaction logic — feeding masked output back in produces
+ * an equivalent masked value, so it remains idempotent without trusting
+ * the input.
  *
  * The goal of these helpers is to give the LLM enough signal to disambiguate
  * different accounts / cards / contacts (e.g. last-4 of an account number)
@@ -20,19 +26,22 @@
  * We keep the last 2 digits (the check-digits) so the model can still
  * disambiguate accounts visually without exposing the identifier.
  *
- * Already-masked inputs (matching the exact redactor output shape) are
- * returned unchanged.
+ * Always runs unconditionally. A CPF must be exactly 11 digits; anything
+ * else (including the masked form `***.***.***-NN`, which strips to only 2
+ * digits) is fully masked to `***.***.***-**`. This makes the function
+ * idempotent on its own output: re-running over `***.***.***-NN` strips
+ * the punctuation and stars, sees a 2-digit string, and returns the
+ * fully-masked form.
  */
-const REDACTED_CPF_RE = /^\*{3}\.\*{3}\.\*{3}-\d{2}$/;
 export function redactCpf(cpf?: string | null): string | null {
   if (cpf === null || cpf === undefined) return null;
   if (cpf === '') return cpf;
-  // Structural idempotent guard: only short-circuit on the exact output shape.
-  if (REDACTED_CPF_RE.test(cpf)) return cpf;
 
   const digits = cpf.replace(/\D/g, '');
-  if (digits.length < 2) {
-    // Nothing useful to keep — fully mask.
+  if (digits.length !== 11) {
+    // Not a valid-length CPF (or an already-masked value with most digits
+    // stripped) — fully mask. Keeps the function idempotent on its own
+    // output shape without trusting input that merely looks masked.
     return '***.***.***-**';
   }
   const last2 = digits.slice(-2);
@@ -42,18 +51,19 @@ export function redactCpf(cpf?: string | null): string | null {
 /**
  * Bank account number: keep only the last 4 digits.
  *
- * Already-masked inputs (exact `****` + 0-4 trailing digits) pass through
- * unchanged. We match the exact redactor output shape, not just a `****`
- * prefix, so values that merely start with stars don't bypass redaction.
+ * Always runs unconditionally. The last-4-digits-of-digits-only operation
+ * is inherently idempotent: the masked form `****1234` strips non-digits
+ * to `1234`, and re-running yields `****1234` again. We always prefix
+ * with `****` even when the input has 4 or fewer digits — those 4 digits
+ * are the "last 4" by definition, and emitting `****NNNN` keeps the shape
+ * stable across re-redaction. Inputs with zero digits return `****`.
  */
-const REDACTED_LAST4_RE = /^\*{4}\d{0,4}$/;
 export function redactAccountNumber(number?: string | null): string | null {
   if (number === null || number === undefined) return null;
   if (number === '') return number;
-  if (REDACTED_LAST4_RE.test(number)) return number;
 
   const digits = number.replace(/\D/g, '');
-  if (digits.length <= 4) return '****';
+  if (digits.length === 0) return '****';
   const last4 = digits.slice(-4);
   return `****${last4}`;
 }
@@ -66,10 +76,9 @@ export function redactAccountNumber(number?: string | null): string | null {
 export function redactCardNumber(pan?: string | null): string | null {
   if (pan === null || pan === undefined) return null;
   if (pan === '') return pan;
-  if (REDACTED_LAST4_RE.test(pan)) return pan;
 
   const digits = pan.replace(/\D/g, '');
-  if (digits.length <= 4) return '****';
+  if (digits.length === 0) return '****';
   const last4 = digits.slice(-4);
   return `****${last4}`;
 }
@@ -87,10 +96,14 @@ export function redactCardNumber(pan?: string | null): string | null {
  *    (da, de, do, dos, das) are skipped when picking the surname token,
  *    so `"Pedro Almeida Filho"` becomes `"Pedro A."` (not `"Pedro F."`)
  *    and `"João da Silva"` becomes `"João S."` (not `"João d."`).
- *  - Already-redacted values (matching the exact output shape) pass
- *    through.
+ *
+ * Always runs unconditionally — there is no input-shape short-circuit.
+ * Re-running over the masked output `"Ignore M."` produces `"Ignore M."`
+ * again (first token is "Ignore", surname token is "M.", initial "M"),
+ * so the function is idempotent on its own output. We do NOT trust
+ * inputs that merely look masked: an upstream value literally equal to
+ * `"Ignore M."` would previously bypass the redactor entirely.
  */
-const REDACTED_OWNER_RE = /^[A-Z][a-záéíóúâêôãõç]* [A-Z]\.$/;
 const NAME_SUFFIXES = new Set([
   'filho',
   'neto',
@@ -106,10 +119,6 @@ export function redactOwnerName(name?: string | null): string | null {
 
   const trimmed = name.trim();
   if (trimmed === '') return name; // preserve whitespace-only as-is (rare)
-
-  // Structural idempotent guard: match the exact redactor output shape
-  // (capitalized first name + single uppercase initial + period).
-  if (REDACTED_OWNER_RE.test(trimmed)) return trimmed;
 
   const tokens = trimmed.split(/\s+/);
   if (tokens.length === 1) {
@@ -141,17 +150,16 @@ export function redactOwnerName(name?: string | null): string | null {
  * than 4 chars keep only their first char (`"al@x.com" -> "a***@x.com"`).
  *
  * If the input doesn't contain `@`, we treat the whole string as a local
- * part and apply the same rule. Already-masked emails (containing `***@`)
- * are returned unchanged.
+ * part and apply the same rule.
+ *
+ * Always runs unconditionally — no input-shape short-circuit. The output
+ * shape is idempotent: re-running over `"ita***@x.com"` takes the first 3
+ * chars `"ita"` and re-emits `"ita***@x.com"`. We do not trust inputs
+ * that merely look masked.
  */
-const REDACTED_EMAIL_RE = /^([^@]{0,3})\*{3}@.+$/;
-const REDACTED_EMAIL_NO_LOCAL_RE = /^\*{3}@.+$/;
 export function redactEmail(email?: string | null): string | null {
   if (email === null || email === undefined) return null;
   if (email === '') return email;
-  // Structural idempotent guards: match the exact two output shapes.
-  if (REDACTED_EMAIL_NO_LOCAL_RE.test(email)) return email;
-  if (REDACTED_EMAIL_RE.test(email)) return email;
 
   const atIdx = email.indexOf('@');
   const local = atIdx >= 0 ? email.slice(0, atIdx) : email;
@@ -168,15 +176,17 @@ export function redactEmail(email?: string | null): string | null {
  * Phone number: digits-only, keep the last 4 (`****1234`).
  * Non-digit formatting (`+55 (11) 9 ...`) is stripped before counting so
  * inputs with international prefixes still mask cleanly.
+ *
+ * Always runs unconditionally. The masked form `****1234` strips to
+ * `1234`, which re-emits as `****1234` — idempotent on its own output
+ * without trusting an input that merely looks masked.
  */
 export function redactPhone(phone?: string | null): string | null {
   if (phone === null || phone === undefined) return null;
   if (phone === '') return phone;
-  if (REDACTED_LAST4_RE.test(phone)) return phone;
 
   const digits = phone.replace(/\D/g, '');
   if (digits.length === 0) return phone;
-  if (digits.length <= 4) return '****';
   const last4 = digits.slice(-4);
   return `****${last4}`;
 }
