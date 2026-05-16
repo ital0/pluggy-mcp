@@ -30,6 +30,7 @@ import {
   checkRateLimit,
   hashArgsSafely,
   hashForAudit,
+  redactBoletoLine,
   redactCardNumber,
   redactCpf,
   redactOwnerName,
@@ -300,7 +301,25 @@ function mapTransaction(
         paymentMethod: wrapUntrusted(t.paymentData.paymentMethod ?? null),
         referenceNumber: wrapUntrusted(t.paymentData.referenceNumber ?? null),
         reason: wrapUntrusted(t.paymentData.reason ?? null),
-        boletoMetadata: t.paymentData.boletoMetadata,
+        // `digitableLine` (47 digits) and `barcode` (44 digits) are
+        // transferable payment instruments — anyone with the full value
+        // can pay the boleto. Mask down to last-6 when redact is on so
+        // the model can still disambiguate without holding settlement
+        // material.
+        boletoMetadata: t.paymentData.boletoMetadata
+          ? {
+              digitableLine: redact
+                ? redactBoletoLine(t.paymentData.boletoMetadata.digitableLine)
+                : t.paymentData.boletoMetadata.digitableLine,
+              barcode: redact
+                ? redactBoletoLine(t.paymentData.boletoMetadata.barcode)
+                : t.paymentData.boletoMetadata.barcode,
+              baseAmount: t.paymentData.boletoMetadata.baseAmount,
+              penaltyAmount: t.paymentData.boletoMetadata.penaltyAmount,
+              interestAmount: t.paymentData.boletoMetadata.interestAmount,
+              discountAmount: t.paymentData.boletoMetadata.discountAmount,
+            }
+          : null,
       }
     : undefined;
 
