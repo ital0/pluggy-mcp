@@ -8,6 +8,7 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { loadSecurityConfig } from '../config.js';
 import {
   audit,
   checkRateLimit,
@@ -110,7 +111,10 @@ export function registerListConnectorsTool(server: McpServer): void {
       let errorCode: string | undefined;
       let requestId: string | undefined;
       try {
-        const rl = checkRateLimit('listConnectors');
+        const sec = loadSecurityConfig();
+        const rl = sec.rateLimit
+          ? checkRateLimit('listConnectors')
+          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
         if (!rl.allowed) {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';

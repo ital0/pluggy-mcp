@@ -141,7 +141,15 @@ export function registerGetAccountsTool(server: McpServer): void {
       let errorCode: string | undefined;
       let requestId: string | undefined;
       try {
-        const rl = checkRateLimit('getAccounts');
+        // Skip the limiter entirely when the operator has disabled it
+        // via `PLUGGY_MCP_RATELIMIT=false`. We still want this branch
+        // present (rather than `if (sec.rateLimit) checkRateLimit(...)`)
+        // because subsequent logic treats `rl.allowed` as the source of
+        // truth and the typed shape stays uniform.
+        const sec = loadSecurityConfig();
+        const rl = sec.rateLimit
+          ? checkRateLimit('getAccounts')
+          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
         if (!rl.allowed) {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
@@ -163,8 +171,9 @@ export function registerGetAccountsTool(server: McpServer): void {
         // Explicit field-by-field mapping. The three PII fields are run
         // through the redactor unless the operator has opted out via
         // `PLUGGY_MCP_REDACT=false` (a startup WARN line is emitted in
-        // that case, see `logSecurityConfig`).
-        const { redact } = loadSecurityConfig();
+        // that case, see `logSecurityConfig`). Re-using the already-loaded
+        // `sec` from the rate-limit guard above.
+        const { redact } = sec;
         // Free-text fields (`name`, `marketingName`) come from the bank
         // and could in theory carry indirect prompt injection. Wrap them
         // in `<untrusted>` delimiters; identifiers, numbers, and enums
@@ -325,7 +334,10 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
       let errorCode: string | undefined;
       let requestId: string | undefined;
       try {
-        const rl = checkRateLimit(toolName);
+        const sec = loadSecurityConfig();
+        const rl = sec.rateLimit
+          ? checkRateLimit(toolName)
+          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
         if (!rl.allowed) {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
