@@ -22,6 +22,7 @@
 
 import { PluggyClient } from 'pluggy-sdk';
 import { loadPluggyConfig } from '../config.js';
+import { MissingCredentialsError } from './client.js';
 
 /**
  * Minimal shape we throw on non-2xx responses. Mirrors the fields that
@@ -72,13 +73,10 @@ function getApiKeyClient(): PluggyClientApiKeyExposed {
   if (cached) return cached;
   const config = loadPluggyConfig();
   if (!config) {
-    // Surface the same shape as `MissingCredentialsError` so callers can
-    // funnel through `classifyAndReport` without special-casing. We don't
-    // re-throw the SDK type here because rawFetch.ts deliberately avoids
-    // pulling in the tool-side error module.
-    throw new Error(
-      'PLUGGY_CLIENT_ID and PLUGGY_CLIENT_SECRET environment variables are required.',
-    );
+    // Throw the same `MissingCredentialsError` the SDK-backed client uses so
+    // `classifyAndReport` maps a credentials gap to `MISSING_CREDENTIALS`
+    // here too — no special-casing in the tool handlers.
+    throw new MissingCredentialsError();
   }
   cached = new PluggyClientApiKeyExposed({
     clientId: config.clientId,
