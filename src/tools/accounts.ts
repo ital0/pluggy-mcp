@@ -211,7 +211,9 @@ export function registerGetAccountsTool(server: McpServer): void {
               ts: new Date().toISOString(),
               tool: 'getAccounts',
               event: 'truncated',
-              itemId,
+              // Hashed for consistency with audit events — raw itemIds
+              // don't appear in stderr.
+              itemIdHash: hashForAudit(itemId),
               total,
               returned: accounts.length,
             }),
