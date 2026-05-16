@@ -145,9 +145,14 @@ export function loadRateLimitConfig(): RateLimitConfig {
  * Pluggy Item UUIDs that the operator wants to scope this MCP server to.
  *
  * Returns:
- *   - `null` when the env var is missing OR empty after trimming. This
- *     signals "no restriction" to the tools — they fall back to their
- *     default behavior of accepting any itemId.
+ *   - `null` when the env var is ABSENT (`undefined`). This signals
+ *     "no restriction" to the tools — they fall back to their default
+ *     behavior of accepting any itemId.
+ *   - an EMPTY `Set<string>` when the env var is PRESENT but contains
+ *     only whitespace/commas after trimming. This is a deliberate
+ *     "deny all" — fail-closed posture; the operator probably typed the
+ *     var name without filling in ids, and we'd rather refuse every
+ *     gated call than silently widen access.
  *   - a non-empty `Set<string>` of trimmed, lower-cased UUIDs otherwise.
  *     Tools that take a raw `itemId` parameter compare against this set
  *     (also lower-cased) and refuse to call the SDK for ids not in it.
@@ -165,6 +170,7 @@ export function loadItemsAllowlist(): Set<string> | null {
 
   const raw = process.env.PLUGGY_ITEM_IDS;
   if (raw === undefined) {
+    // Absent — no restriction.
     cachedItemsAllowlist = null;
     return null;
   }
@@ -174,21 +180,19 @@ export function loadItemsAllowlist(): Set<string> | null {
     .map((s) => s.trim().toLowerCase())
     .filter((s) => s.length > 0);
 
-  if (ids.length === 0) {
-    // Treat `PLUGGY_ITEM_IDS=` (set but empty) the same as unset — an
-    // empty allowlist would be a footgun (no items would ever be
-    // accepted) and is almost certainly a config mistake.
-    cachedItemsAllowlist = null;
-    return null;
-  }
-
+  // Present-but-empty (whitespace/commas only) is treated as DENY ALL.
+  // Fail-closed: the operator opted into scoping but provided no ids,
+  // which is almost certainly a misconfiguration we should surface
+  // loudly rather than silently widen access.
   cachedItemsAllowlist = new Set(ids);
   return cachedItemsAllowlist;
 }
 
 /**
  * Test whether a caller-supplied `itemId` is permitted by the operator's
- * allowlist. Always returns `true` when no allowlist is configured.
+ * allowlist. Returns `true` when no allowlist is configured (`null`);
+ * returns `false` for every id when the allowlist is the empty set
+ * ("deny all" — `PLUGGY_ITEM_IDS` set but empty).
  *
  * The comparison is case-insensitive — Pluggy ids are UUIDs, and we don't
  * want a request that differs only in case from a known id to be denied
@@ -198,6 +202,7 @@ export function loadItemsAllowlist(): Set<string> | null {
 export function isItemAllowed(itemId: string): boolean {
   const allowlist = loadItemsAllowlist();
   if (allowlist === null) return true;
+  if (allowlist.size === 0) return false;
   return allowlist.has(itemId.trim().toLowerCase());
 }
 
@@ -252,6 +257,14 @@ export function logSecurityConfig(): void {
       '[pluggy-mcp] WARN: audit logging DISABLED — non-sensitive tool calls will not be recorded. ' +
         'Set PLUGGY_MCP_AUDIT=true to enable. (Sensitive-event audit is unbypassable.)',
     );
+  }
+  if (allowlist !== null && allowlist.size === 0) {
+    // PLUGGY_ITEM_IDS is set but empty — every gated tool will refuse
+    // every itemId. Surface this so an operator who mistyped catches it
+    // at startup instead of after a chain of FORBIDDEN envelopes.
+    logEvent('items_allowlist_empty', {
+      message: 'PLUGGY_ITEM_IDS is set but empty; all gated tools will deny every itemId.',
+    });
   }
 }
 
