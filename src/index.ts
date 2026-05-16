@@ -12,10 +12,13 @@ import { SERVER_INFO, loadPluggyConfig } from './config.js';
 import { registerAllTools } from './tools/index.js';
 
 async function main(): Promise<void> {
-  // Process-level safety net. A stdio MCP server lives or dies with its
-  // pipes — exiting on a stray promise rejection would orphan the host
-  // mid-conversation. We log and stay up so the host can surface the
-  // error and the operator can grep stderr for `event=...`.
+  // Process-level safety net. We split policy between the two channels:
+  //  - unhandledRejection: log only. A missing `.catch()` should not abort
+  //    an active tool call — the stdio pipe must stay open so the host can
+  //    surface the error and the operator can grep stderr for `event=...`.
+  //  - uncaughtException: log and exit. Per Node.js docs, an uncaught
+  //    exception leaves the process in an unknown state; the safest move
+  //    is to exit so the MCP host can restart the server cleanly.
   process.on('unhandledRejection', (reason) => {
     console.error(
       JSON.stringify({
@@ -24,6 +27,7 @@ async function main(): Promise<void> {
         reason: String(reason),
       }),
     );
+    // Intentionally do NOT exit — a missing .catch should not abort mid-tool-call.
   });
   process.on('uncaughtException', (err) => {
     console.error(
@@ -34,8 +38,9 @@ async function main(): Promise<void> {
         message: err?.message ?? null,
       }),
     );
-    // Deliberately do NOT exit — keep the stdio pipe alive so the host
-    // can surface the error and the operator can decide what to do.
+    // Per Node.js docs, uncaught exceptions mean the process is in an unknown state.
+    // Exit so the MCP host can restart the server cleanly.
+    process.exit(1);
   });
 
   const server = new McpServer({
