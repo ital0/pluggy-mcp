@@ -50,8 +50,3 @@ export function getPluggyClient(): PluggyClient {
   });
   return cached;
 }
-
-/** Test/maintenance hook — reset the cached client (useful in future tests). */
-export function __resetPluggyClient(): void {
-  cached = null;
-}
