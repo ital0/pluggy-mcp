@@ -97,8 +97,14 @@ function normalizeRecurringPayments(value: unknown): unknown {
   }
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>;
-    const out: Record<string, unknown> = {};
+    // `Object.create(null)` so the resulting object has no prototype —
+    // serializing through JSON later cannot collide with `Object.prototype`
+    // accessors, and explicit skip-listing the three dangerous keys below
+    // gives belt-and-braces against an upstream payload trying to inject
+    // a `__proto__` / `constructor` / `prototype` field.
+    const out: Record<string, unknown> = Object.create(null);
     for (const [k, v] of Object.entries(obj)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
       out[k] = normalizeRecurringPayments(v);
     }
     return out;
@@ -265,8 +271,11 @@ function normalizeInsightsBook(value: unknown): unknown {
   }
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>;
-    const out: Record<string, unknown> = {};
+    // Same posture as `normalizeRecurringPayments`: prototype-free output
+    // object and explicit skip for `__proto__` / `constructor` / `prototype`.
+    const out: Record<string, unknown> = Object.create(null);
     for (const [k, v] of Object.entries(obj)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
       out[k] = normalizeInsightsBook(v);
     }
     return out;
