@@ -9,10 +9,10 @@
  *
  * Both hosts authenticate with the same `X-API-KEY` short-lived token the
  * SDK already manages internally. Rather than redo the auth handshake by
- * hand, we extend the SDK's `BaseApi` so we can call its `protected`
- * `getApiKey()` and reuse the same token cache / refresh that backs every
- * other Pluggy call. That keeps our error shapes consistent with what the
- * `extractStatus` classifier in `../util/errors.ts` already understands.
+ * hand, we reuse the SHARED `PluggyClientExtended` singleton from
+ * `./client.ts` — its `fetchApiKey()` returns the SDK's cached JWT (the
+ * same one balance / accounts / transactions use), so there's exactly one
+ * token cache and one refresh schedule across every Pluggy code path here.
  *
  * Note: these endpoints are PREMIUM. Pluggy returns 403 for accounts
  * whose plan does not include enrichment / insights. We do NOT auto-retry
@@ -20,10 +20,8 @@
  * feature is not unlocked, not a transient failure.
  */
 
-import { PluggyClient } from 'pluggy-sdk';
-import { loadPluggyConfig } from '../config.js';
+import { getPluggyClient } from './client.js';
 import { logEvent } from '../util/log.js';
-import { MissingCredentialsError } from './client.js';
 
 /**
  * Minimal shape we throw on non-2xx responses. Mirrors the fields that
@@ -52,40 +50,6 @@ export class PluggyRawFetchError extends Error {
   }
 }
 
-/**
- * Subclass exists solely so we can promote the SDK's `protected getApiKey()`
- * to a callable method from our module. We deliberately do NOT widen any
- * other internal — `serviceInstance`, `baseUrl`, `defaultHeaders` are still
- * protected, so call sites here cannot accidentally bypass the SDK's
- * configured behavior (e.g. base URL override via `PLUGGY_API_URL`).
- */
-class PluggyClientApiKeyExposed extends PluggyClient {
-  fetchApiKey(): Promise<string> {
-    // The base implementation returns a cached JWT and refreshes it when
-    // it's within 30s of expiry. Calling on every request is safe (and
-    // cheap when the cache is warm) — same behavior as `createGetRequest`.
-    return this.getApiKey();
-  }
-}
-
-let cached: PluggyClientApiKeyExposed | null = null;
-
-function getApiKeyClient(): PluggyClientApiKeyExposed {
-  if (cached) return cached;
-  const config = loadPluggyConfig();
-  if (!config) {
-    // Throw the same `MissingCredentialsError` the SDK-backed client uses so
-    // `classifyAndReport` maps a credentials gap to `MISSING_CREDENTIALS`
-    // here too — no special-casing in the tool handlers.
-    throw new MissingCredentialsError();
-  }
-  cached = new PluggyClientApiKeyExposed({
-    clientId: config.clientId,
-    clientSecret: config.clientSecret,
-  });
-  return cached;
-}
-
 export type PluggyRawFetchMethod = 'GET' | 'POST';
 
 /**
@@ -108,7 +72,10 @@ export async function pluggyRawFetch(
   method: PluggyRawFetchMethod,
   body?: unknown,
 ): Promise<unknown> {
-  const apiKey = await getApiKeyClient().fetchApiKey();
+  // Reuse the shared `PluggyClientExtended` singleton — same JWT cache as
+  // every SDK-backed tool. Throws `MissingCredentialsError` if env is
+  // unset, which `classifyAndReport` maps to `MISSING_CREDENTIALS`.
+  const apiKey = await getPluggyClient().fetchApiKey();
   const headers: Record<string, string> = {
     'X-API-KEY': apiKey,
     // Pluggy returns JSON; ask for it explicitly so any future content

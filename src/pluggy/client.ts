@@ -27,18 +27,25 @@ export interface RealTimeBalance {
 }
 
 /**
- * Subclass of `PluggyClient` adding the one read-only endpoint the SDK is
- * missing for PR3: real-time balance. We deliberately use `protected`
- * inheritance rather than reaching into the SDK's request stack via a
- * standalone `fetch` because:
- *   - `createGetRequest` already handles auth (X-API-KEY refresh), base
- *     URL resolution (`PLUGGY_API_URL` override), JSON-with-Dates parsing,
- *     and error normalization so our error classifier still works.
- *   - Re-implementing those concerns by hand would mean duplicating the
- *     SDK's auth handshake — exactly the leaky surface we centralized
- *     into this module to begin with.
+ * Subclass of `PluggyClient` widening two `protected` members from the SDK
+ * so we can use them outside of the class hierarchy:
+ *   - `createGetRequest` → wrapped as `fetchAccountBalance`, the one
+ *     read-only endpoint the SDK is missing for PR3 (real-time balance).
+ *   - `getApiKey` → wrapped as `fetchApiKey` so the PR4 "premium"
+ *     endpoints in `./rawFetch.ts` can reuse the SAME cached JWT this
+ *     client maintains (no second auth handshake, no second token cache).
+ *
+ * We deliberately keep this widening minimal — `serviceInstance`,
+ * `baseUrl`, `defaultHeaders` stay protected so call sites cannot
+ * accidentally bypass the SDK's configured behavior (e.g. a `PLUGGY_API_URL`
+ * override on the SDK base).
+ *
+ * Using `createGetRequest` for the balance endpoint matters because it
+ * already handles auth (X-API-KEY refresh), base URL resolution, JSON-
+ * with-Dates parsing, and error normalization so our error classifier
+ * still works.
  */
-class PluggyClientWithBalance extends PluggyClient {
+class PluggyClientExtended extends PluggyClient {
   /**
    * Fetch the real-time balance for an account. Documented Pluggy endpoint
    * but not exposed by the 0.85.x SDK; we go through the SDK's
@@ -48,9 +55,18 @@ class PluggyClientWithBalance extends PluggyClient {
   fetchAccountBalance(accountId: string): Promise<RealTimeBalance> {
     return this.createGetRequest<RealTimeBalance>(`accounts/${accountId}/balance`);
   }
+
+  /**
+   * Expose the SDK's protected `getApiKey()` so `rawFetch.ts` can share
+   * the same JWT cache. Returns a cached token and refreshes when within
+   * 30s of expiry — safe to call on every request.
+   */
+  fetchApiKey(): Promise<string> {
+    return this.getApiKey();
+  }
 }
 
-let cached: PluggyClientWithBalance | null = null;
+let cached: PluggyClientExtended | null = null;
 
 /**
  * Returned when credentials are missing. Tool handlers translate this
@@ -72,7 +88,7 @@ export class MissingCredentialsError extends Error {
  * Throws `MissingCredentialsError` if env vars are not set so callers can
  * differentiate a configuration problem from an upstream failure.
  */
-export function getPluggyClient(): PluggyClientWithBalance {
+export function getPluggyClient(): PluggyClientExtended {
   if (cached) {
     return cached;
   }
@@ -82,7 +98,7 @@ export function getPluggyClient(): PluggyClientWithBalance {
     throw new MissingCredentialsError();
   }
 
-  cached = new PluggyClientWithBalance({
+  cached = new PluggyClientExtended({
     clientId: config.clientId,
     clientSecret: config.clientSecret,
   });
