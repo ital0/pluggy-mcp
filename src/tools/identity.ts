@@ -51,6 +51,7 @@ import {
   audit,
   checkRateLimit,
   hashArgsSafely,
+  redactAccountNumber,
   redactCpf,
   redactEmail,
   redactOwnerName,
@@ -316,8 +317,11 @@ function mapIdentity(
             ? i.financialRelationships.accounts.map((a) => ({
                 compeCode: a.compeCode,
                 branchCode: a.branchCode,
+                // Centralized redactor handles null/undefined/empty inputs
+                // safely; fall back to `****` if it returns null so the
+                // schema's non-null `number` contract stays intact.
                 number: redact
-                  ? `****${a.number.slice(-4)}`
+                  ? (redactAccountNumber(a.number) ?? '****')
                   : a.number,
                 checkDigit: a.checkDigit,
                 type: a.type,
