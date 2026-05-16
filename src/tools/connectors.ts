@@ -8,7 +8,13 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
-import { audit, checkRateLimit, hashForAudit } from '../security/index.js';
+import {
+  audit,
+  checkRateLimit,
+  hashForAudit,
+  wrapUntrusted,
+  UNTRUSTED_PREAMBLE,
+} from '../security/index.js';
 
 // Hardcoded — same posture as `src/util/errors.ts`; never let runtime
 // state leak into the model-facing string.
@@ -82,7 +88,8 @@ export function registerListConnectorsTool(server: McpServer): void {
       description:
         'List all financial institutions (connectors) available through Pluggy. ' +
         'Use this to discover which banks, brokers, and other institutions a user ' +
-        'can link, and to obtain the `connectorId` needed to create an item.',
+        'can link, and to obtain the `connectorId` needed to create an item.\n\n' +
+        UNTRUSTED_PREAMBLE,
       inputSchema: {
         // Intentionally empty — `GET /connectors` returns the full list and
         // server-side filters live on a follow-up tool (added in PR2+).
@@ -121,10 +128,15 @@ export function registerListConnectorsTool(server: McpServer): void {
         const page = await client.fetchConnectors();
 
         // Re-shape into our outputSchema — the SDK may add fields we don't
-        // currently advertise; only forward what we documented.
+        // currently advertise; only forward what we documented. We wrap
+        // the free-text `name` in `<untrusted>` delimiters: Pluggy
+        // controls this string today but it ultimately surfaces an
+        // institution-provided value, and treating it as data — not
+        // instructions — is the safe posture. Other connector fields
+        // are URLs / hex colors / enums and don't need wrapping.
         const connectors = page.results.map((c) => ({
           id: c.id,
-          name: c.name,
+          name: wrapUntrusted(c.name) ?? c.name,
           institutionUrl: c.institutionUrl,
           imageUrl: c.imageUrl,
           primaryColor: c.primaryColor,

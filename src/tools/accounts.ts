@@ -25,6 +25,8 @@ import {
   checkRateLimit,
   audit,
   hashForAudit,
+  wrapUntrusted,
+  UNTRUSTED_PREAMBLE,
 } from '../security/index.js';
 
 const BankDataSchema = z.object({
@@ -114,7 +116,8 @@ export function registerGetAccountsTool(server: McpServer): void {
         'Retrieve all accounts (bank, credit card, etc.) belonging to a given ' +
         'Pluggy Item. An Item represents one user-institution connection — call ' +
         '`listConnectors` first to discover institutions and create items via the ' +
-        'Pluggy dashboard or your own backend to obtain an `itemId`.',
+        'Pluggy dashboard or your own backend to obtain an `itemId`.\n\n' +
+        UNTRUSTED_PREAMBLE,
       inputSchema: {
         itemId: z
           .string()
@@ -159,14 +162,18 @@ export function registerGetAccountsTool(server: McpServer): void {
         // `PLUGGY_MCP_REDACT=false` (a startup WARN line is emitted in
         // that case, see `logSecurityConfig`).
         const { redact } = loadSecurityConfig();
+        // Free-text fields (`name`, `marketingName`) come from the bank
+        // and could in theory carry indirect prompt injection. Wrap them
+        // in `<untrusted>` delimiters; identifiers, numbers, and enums
+        // pass through untouched.
         const accounts = page.results.map((a) => ({
           id: a.id,
           itemId: a.itemId,
           type: a.type,
           subtype: a.subtype,
           balance: a.balance,
-          name: a.name,
-          marketingName: a.marketingName,
+          name: wrapUntrusted(a.name) ?? a.name,
+          marketingName: wrapUntrusted(a.marketingName),
           currencyCode: a.currencyCode,
           number: redact ? redactAccountNumber(a.number) : a.number,
           owner: redact ? redactOwnerName(a.owner) : a.owner,
@@ -289,7 +296,8 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
       description:
         'DESTRUCTIVE FOR PRIVACY: returns unmasked CPF, full account number, ' +
         'and account holder name for a single Pluggy account. Use only when ' +
-        'explicitly requested by the user. Every call is audit-logged.',
+        'explicitly requested by the user. Every call is audit-logged.\n\n' +
+        UNTRUSTED_PREAMBLE,
       inputSchema: {
         accountId: z
           .string()
@@ -341,10 +349,13 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
           type: a.type,
           subtype: a.subtype,
           balance: a.balance,
-          name: a.name,
-          marketingName: a.marketingName,
+          // The PII fields below are intentionally unmasked — this is
+          // the explicit "show me the raw values" tool. The non-PII
+          // free-text fields are still wrapped in <untrusted> to keep
+          // the indirect-prompt-injection posture consistent.
+          name: wrapUntrusted(a.name) ?? a.name,
+          marketingName: wrapUntrusted(a.marketingName),
           currencyCode: a.currencyCode,
-          // Verbatim PII — the whole point of this tool.
           number: a.number,
           owner: a.owner,
           taxNumber: a.taxNumber,
