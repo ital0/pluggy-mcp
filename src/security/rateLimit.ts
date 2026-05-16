@@ -149,10 +149,23 @@ export function checkRateLimit(
  * Clear all in-memory rate-limit state.
  *
  * @internal — exposed only for use by future tests. The `__` prefix is
- * meant to discourage accidental imports from production code. No public
- * API guarantees apply.
+ * meant to discourage accidental imports from production code; the
+ * `NODE_ENV` guard below makes accidental production calls a no-op so
+ * an upstream dependency or misconfigured caller can't reset the limiter
+ * out from under us. We log a stderr event when blocked so an operator
+ * can see that something tried.
  */
 export function __resetRateLimits(): void {
+  if (process.env.NODE_ENV !== 'test') {
+    console.error(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        event: 'reset_blocked',
+        reason: 'NODE_ENV !== test',
+      }),
+    );
+    return;
+  }
   buckets.clear();
   overflowWarned.clear();
 }
