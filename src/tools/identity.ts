@@ -291,7 +291,10 @@ function mapIdentity(
       : null,
     investorProfile: i.investorProfile,
     establishmentName: wrapUntrusted(i.establishmentName),
-    establishmentCode: i.establishmentCode,
+    // Wrap for parity with `establishmentName` — both are institution-
+    // controlled free-text fields and could carry instruction-shaped
+    // payloads into the LLM channel.
+    establishmentCode: wrapUntrusted(i.establishmentCode),
     financialRelationships: i.financialRelationships
       ? {
           startDate: dateToIso(i.financialRelationships.startDate) ?? '',
