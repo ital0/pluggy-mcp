@@ -11,7 +11,7 @@ import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 import {
   audit,
   checkRateLimit,
-  hashForAudit,
+  hashArgsSafely,
   wrapUntrusted,
   UNTRUSTED_PREAMBLE,
 } from '../security/index.js';
@@ -219,10 +219,9 @@ export function registerListConnectorsTool(server: McpServer): void {
           outcome,
           errorCode,
           durationMs: Math.round(performance.now() - start),
-          // No inputs to hash — listConnectors takes no args. The
-          // `argsHash` field is omitted entirely so the audit line stays
-          // honest about there being nothing to fingerprint.
-          argsHash: hashForAudit({}),
+          // No-arg tool — `hashArgsSafely({}, [])` produces a stable empty
+          // fingerprint without leaking any field names.
+          ...hashArgsSafely({}, []),
           requestId,
         });
       }

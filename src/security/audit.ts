@@ -34,6 +34,32 @@ export interface AuditEvent {
 }
 
 /**
+ * Hash only allowlisted fields of an args object. Returns an `argsHash`
+ * of the FULL args plus a per-field hash for each name in `allowedFields`
+ * that is present and stringy. Other fields are deliberately ignored —
+ * tools may grow free-text params in the future and we don't want a new
+ * field name to silently appear in audit output.
+ */
+export function hashArgsSafely(
+  args: unknown,
+  allowedFields: readonly string[],
+): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {
+    argsHash: hashForAudit(args),
+  };
+  if (args && typeof args === 'object') {
+    const obj = args as Record<string, unknown>;
+    for (const field of allowedFields) {
+      const v = obj[field];
+      if (typeof v === 'string') {
+        out[`${field}Hash`] = hashForAudit(v);
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Cheap 12-char fingerprint of a value. Use only for log correlation —
  * never as a security token.
  *

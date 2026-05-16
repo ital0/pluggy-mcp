@@ -24,6 +24,7 @@ import {
   redactOwnerName,
   checkRateLimit,
   audit,
+  hashArgsSafely,
   hashForAudit,
   wrapUntrusted,
   UNTRUSTED_PREAMBLE,
@@ -250,8 +251,7 @@ export function registerGetAccountsTool(server: McpServer): void {
           outcome,
           errorCode,
           durationMs: Math.round(performance.now() - start),
-          argsHash: hashForAudit({ itemId }),
-          itemIdHash: typeof itemId === 'string' ? hashForAudit(itemId) : undefined,
+          ...hashArgsSafely({ itemId }, ['itemId']),
           requestId,
         });
       }
@@ -405,15 +405,12 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
           content: [{ type: 'text' as const, text: safe.message }],
         };
       } finally {
-        const accountId = (args as { accountId?: unknown })?.accountId;
         audit({
           tool: toolName,
           outcome,
           errorCode,
           durationMs: Math.round(performance.now() - start),
-          argsHash: hashForAudit(args),
-          accountIdHash:
-            typeof accountId === 'string' ? hashForAudit(accountId) : undefined,
+          ...hashArgsSafely(args, ['accountId']),
           sensitive: true,
           requestId,
         });
