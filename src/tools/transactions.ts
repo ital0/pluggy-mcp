@@ -478,6 +478,28 @@ export function registerListTransactionsTool(server: McpServer): void {
 
         const total = result.total ?? transactions.length;
         const totalPages = result.totalPages ?? 1;
+
+        // Page overflow: the caller asked for a page past the last one.
+        // Return a NOT_FOUND envelope rather than an empty success — an
+        // empty page would not signal "you went too far" to the LLM, and
+        // a clear errorCode lets it pivot (e.g. clamp `page` to
+        // `totalPages` and retry). Hardcoded message; no upstream content.
+        if (totalPages > 0 && effectivePage > totalPages) {
+          outcome = 'error';
+          errorCode = 'NOT_FOUND';
+          const message = `Requested page ${effectivePage} exceeds totalPages ${totalPages}.`;
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'NOT_FOUND' as const,
+            message,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: message }],
+          };
+        }
+
         const truncated = effectivePage < totalPages;
 
         if (truncated) {
