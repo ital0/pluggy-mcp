@@ -22,6 +22,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
+import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
@@ -169,12 +170,6 @@ const GetTransactionOutputShape = {
   requestId: z.string().optional(),
   message: z.string().optional(),
 };
-
-function dateToIso(value: Date | string | null | undefined): string | null {
-  if (value === null || value === undefined) return null;
-  if (value instanceof Date) return value.toISOString();
-  return value;
-}
 
 /**
  * Mask a payer/receiver participant. Document number is CPF (11 digits)

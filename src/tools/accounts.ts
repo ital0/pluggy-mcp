@@ -15,6 +15,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
+import { toIsoIfDate } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
@@ -103,10 +104,6 @@ const GetAccountsOutputShape = {
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
 };
-
-function toIsoIfDate<T>(value: T | Date): T | string {
-  return value instanceof Date ? value.toISOString() : value;
-}
 
 export function registerGetAccountsTool(server: McpServer): void {
   server.registerTool(

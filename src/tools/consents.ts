@@ -18,6 +18,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
+import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
@@ -63,12 +64,6 @@ const GetConsentOutputShape = {
   requestId: z.string().optional(),
   message: z.string().optional(),
 };
-
-function dateToIso(value: Date | string | null | undefined): string | null {
-  if (value === null || value === undefined) return null;
-  if (value instanceof Date) return value.toISOString();
-  return value;
-}
 
 export function registerListConsentsTool(server: McpServer): void {
   const toolName = 'listConsents';
