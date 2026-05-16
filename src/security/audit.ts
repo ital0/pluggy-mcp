@@ -160,6 +160,11 @@ export function audit(ev: AuditEvent): void {
           tool: ev?.tool,
           outcome: ev?.outcome,
           sensitive: ev?.sensitive,
+          // Surface the error constructor name too — `reason` alone often
+          // collapses to "undefined" when the underlying throw was a
+          // non-Error value, but the constructor name pins down whether
+          // we hit a TypeError, RangeError, etc.
+          errorName: (err as { name?: unknown })?.name ?? null,
           reason: (err as { message?: unknown })?.message ?? 'unknown',
         }),
       );
