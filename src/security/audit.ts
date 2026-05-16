@@ -97,10 +97,23 @@ export function audit(ev: AuditEvent): void {
   }
   if (!ev.sensitive && !cfg.audit) return;
   try {
+    // Explicit field-by-field copy (no spread of `ev`). If a future caller
+    // accidentally adds an extra field to the event object — e.g. a debug
+    // `rawArgs` — spreading would leak it into stderr. Explicit listing
+    // keeps the audit schema closed and reviewable.
     const line = {
       ts: new Date().toISOString(),
       event: 'audit',
-      ...ev,
+      tool: ev.tool,
+      outcome: ev.outcome,
+      errorCode: ev.errorCode,
+      durationMs: ev.durationMs,
+      argsHash: ev.argsHash,
+      itemIdHash: ev.itemIdHash,
+      accountIdHash: ev.accountIdHash,
+      sensitive: ev.sensitive,
+      requestId: ev.requestId,
+      rateLimitReason: ev.rateLimitReason,
     };
     console.error(JSON.stringify(line));
   } catch (err) {
