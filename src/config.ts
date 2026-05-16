@@ -127,10 +127,12 @@ export function loadRateLimitConfig(): RateLimitConfig {
   if (cachedRateLimit) return cachedRateLimit;
   cachedRateLimit = {
     perMinute: parsePositiveInt(
+      'PLUGGY_MCP_RATELIMIT_PER_MIN',
       process.env.PLUGGY_MCP_RATELIMIT_PER_MIN,
       DEFAULT_RATE_LIMIT_PER_MINUTE,
     ),
     perDay: parsePositiveInt(
+      'PLUGGY_MCP_RATELIMIT_PER_DAY',
       process.env.PLUGGY_MCP_RATELIMIT_PER_DAY,
       DEFAULT_RATE_LIMIT_PER_DAY,
     ),
@@ -199,10 +201,20 @@ export function isItemAllowed(itemId: string): boolean {
   return allowlist.has(itemId.trim().toLowerCase());
 }
 
-function parsePositiveInt(raw: string | undefined, fallback: number): number {
+function parsePositiveInt(
+  name: string,
+  raw: string | undefined,
+  fallback: number,
+): number {
   if (raw === undefined || raw === '') return fallback;
   const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n <= 0) return fallback;
+  if (!Number.isFinite(n) || n <= 0) {
+    // Operator typo or non-positive value — log so the silent fallback
+    // is at least discoverable. We deliberately do NOT log on the
+    // unset/empty path (that's the documented "use default" route).
+    logEvent('config_invalid', { var: name, fallback });
+    return fallback;
+  }
   return n;
 }
 
