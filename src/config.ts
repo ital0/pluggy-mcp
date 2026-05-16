@@ -35,6 +35,17 @@ export function loadPluggyConfig(): PluggyConfig | null {
   const clientId = process.env.PLUGGY_CLIENT_ID;
   const clientSecret = process.env.PLUGGY_CLIENT_SECRET;
 
+  // After capturing into memory, scrub the originals so future tools or
+  // dependencies cannot read them out of process.env. The memoized
+  // `cached` value above is the only place the secret lives from now on.
+  // Note: a child process spawned BEFORE this point would still have
+  // inherited the env, so this should run as early as possible during
+  // startup (it runs on first call, which `main()` triggers up-front).
+  // We scrub even when one credential is missing so a partially-set env
+  // doesn't leak the half that was present.
+  delete process.env.PLUGGY_CLIENT_ID;
+  delete process.env.PLUGGY_CLIENT_SECRET;
+
   if (!clientId || !clientSecret) {
     return null;
   }
