@@ -116,21 +116,24 @@ export function checkRateLimit(
   if (bucket.minuteHits.length >= perMinute) {
     // Oldest hit ages out of the minute window first.
     const retryAfterMs = Math.max(0, bucket.minuteHits[0] + MINUTE_MS - now);
+    // Denials count against the window they collided with, NOT the
+    // longer window. We push to `minuteHits` (so a tight retry loop
+    // can't unlock just because each call was rejected) but deliberately
+    // skip `dayHits` — otherwise a runaway agent making 200 calls in
+    // ~7 minutes during a minute-rate exhaustion would convert that
+    // into a 24h lockout for the entire day budget.
     bucket.minuteHits.push(now);
-    bucket.dayHits.push(now);
-    warnOnceIfOverflow(toolName, bucket.dayHits.length);
+    warnOnceIfOverflow(toolName, bucket.minuteHits.length);
     capHitArray(bucket.minuteHits);
-    capHitArray(bucket.dayHits);
     return { allowed: false, retryAfterMs, reason: 'PER_MINUTE' };
   }
 
   if (bucket.dayHits.length >= perDay) {
     const retryAfterMs = Math.max(0, bucket.dayHits[0] + DAY_MS - now);
-    bucket.minuteHits.push(now);
-    bucket.dayHits.push(now);
-    warnOnceIfOverflow(toolName, bucket.dayHits.length);
-    capHitArray(bucket.minuteHits);
-    capHitArray(bucket.dayHits);
+    // PER_DAY denial: the daily budget is already consumed; pushing
+    // additional hits to either window only inflates accounting without
+    // changing the result. Skip both — the existing entries already
+    // enforce the lockout until they age out of the 24h window.
     return { allowed: false, retryAfterMs, reason: 'PER_DAY' };
   }
 
