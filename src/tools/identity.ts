@@ -297,8 +297,15 @@ function mapIdentity(
     establishmentCode: wrapUntrusted(i.establishmentCode),
     financialRelationships: i.financialRelationships
       ? {
-          startDate: dateToIso(i.financialRelationships.startDate) ?? '',
-          productsServicesType: i.financialRelationships.productsServicesType,
+          // `startDate` and `productsServicesType` are institution-
+          // controlled strings; wrap for parity with other free-text
+          // identity fields. `dateToIso` already normalizes the date
+          // shape, but we still wrap the resulting string.
+          startDate:
+            wrapUntrusted(dateToIso(i.financialRelationships.startDate)) ?? '',
+          productsServicesType: i.financialRelationships.productsServicesType.map(
+            (t) => wrapUntrusted(t) ?? '',
+          ),
           procurators: i.financialRelationships.procurators.map((p) => ({
             type: p.type,
             cpfNumber: redact ? (redactCpf(p.cpfNumber) as string) : p.cpfNumber,
