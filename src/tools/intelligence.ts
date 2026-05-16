@@ -79,6 +79,18 @@ const GetRecurringPaymentsOutputShape = {
 };
 
 /**
+ * Hardcoded recursion ceiling for the two response normalizers below.
+ * The upstream enrichment / insights payloads are loosely typed and could
+ * — accidentally or maliciously — contain deeply nested structures that
+ * would blow the stack. 10 levels is comfortably deeper than any
+ * documented Pluggy response we've seen; past that we truncate the
+ * subtree to a wrapped sentinel string so the LLM still sees a value
+ * but the recursion terminates safely.
+ */
+const MAX_NORMALIZE_DEPTH = 10;
+const MAX_DEPTH_SENTINEL = '[truncated: max depth]';
+
+/**
  * Walk the recurring-payments response and wrap every string leaf in
  * `<untrusted>`. The upstream shape is documented loosely and may change;
  * a recursive wrap is the safest posture short of pinning a strict
@@ -89,11 +101,12 @@ const GetRecurringPaymentsOutputShape = {
  * BOOLEANS / NULLS pass through. Object keys are NOT wrapped (they are
  * server-controlled by Pluggy, not adversarial).
  */
-function normalizeRecurringPayments(value: unknown): unknown {
+function normalizeRecurringPayments(value: unknown, depth: number = 0): unknown {
+  if (depth >= MAX_NORMALIZE_DEPTH) return wrapUntrusted(MAX_DEPTH_SENTINEL);
   if (value === null || value === undefined) return value;
   if (typeof value === 'string') return wrapUntrusted(value);
   if (Array.isArray(value)) {
-    return value.map((v) => normalizeRecurringPayments(v));
+    return value.map((v) => normalizeRecurringPayments(v, depth + 1));
   }
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>;
@@ -105,7 +118,7 @@ function normalizeRecurringPayments(value: unknown): unknown {
     const out: Record<string, unknown> = Object.create(null);
     for (const [k, v] of Object.entries(obj)) {
       if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
-      out[k] = normalizeRecurringPayments(v);
+      out[k] = normalizeRecurringPayments(v, depth + 1);
     }
     return out;
   }
@@ -263,11 +276,12 @@ const GetInsightsBookOutputShape = {
  * so the two surfaces can diverge if Pluggy publishes a tighter schema
  * for one of them.
  */
-function normalizeInsightsBook(value: unknown): unknown {
+function normalizeInsightsBook(value: unknown, depth: number = 0): unknown {
+  if (depth >= MAX_NORMALIZE_DEPTH) return wrapUntrusted(MAX_DEPTH_SENTINEL);
   if (value === null || value === undefined) return value;
   if (typeof value === 'string') return wrapUntrusted(value);
   if (Array.isArray(value)) {
-    return value.map((v) => normalizeInsightsBook(v));
+    return value.map((v) => normalizeInsightsBook(v, depth + 1));
   }
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>;
@@ -276,7 +290,7 @@ function normalizeInsightsBook(value: unknown): unknown {
     const out: Record<string, unknown> = Object.create(null);
     for (const [k, v] of Object.entries(obj)) {
       if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
-      out[k] = normalizeInsightsBook(v);
+      out[k] = normalizeInsightsBook(v, depth + 1);
     }
     return out;
   }
