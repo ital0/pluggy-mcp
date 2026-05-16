@@ -235,11 +235,12 @@ export function registerListConnectorsTool(server: McpServer): void {
 // ---------------------------------------------------------------------------
 //
 // Fetches a single connector by its numeric id. Same field set as
-// `listConnectors` plus the `credentials` array (the schema the
-// institution requires to create an item — used to render the right
-// form in a UI). Connector ids are numeric integers, NOT UUIDs, so the
+// `listConnectors`. Connector ids are numeric integers, NOT UUIDs, so the
 // input schema validates `z.number().int()`. No PII; same untrusted wrap
-// for the free-text `name`.
+// for the free-text `name`. We deliberately do NOT surface the SDK's
+// `credentials` array — that is internal Pluggy form metadata used to
+// render a UI form, not useful to the LLM, and exposing it would expand
+// the schema significantly without a corresponding caller benefit.
 
 const GetConnectorOutputShape = {
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
@@ -258,9 +259,8 @@ export function registerGetConnectorTool(server: McpServer): void {
         UNTRUSTED_PREAMBLE +
         '\n\n' +
         'Fetch a single Pluggy connector by id. Use this after ' +
-        '`listConnectors` to inspect the products an institution supports, ' +
-        'its real-time health, and the credentials schema needed to create ' +
-        'an item against it.',
+        '`listConnectors` to inspect the products an institution supports ' +
+        'and its real-time health.',
       inputSchema: {
         connectorId: z
           .number()
