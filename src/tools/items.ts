@@ -25,7 +25,6 @@ import {
   checkRateLimit,
   hashArgsSafely,
   wrapUntrusted,
-  redactOwnerName,
   UNTRUSTED_PREAMBLE,
   LOCAL_RATE_LIMITED_MESSAGE,
 } from '../security/index.js';
@@ -42,14 +41,34 @@ export const ITEM_NOT_ALLOWED_MESSAGE =
 
 const ItemProductStepWarningSchema = z.object({
   code: z.string(),
+  // `message` and `providerMessage` are institution-composed free text.
+  // Both are wrapped in <untrusted> in the mapper before they reach the
+  // schema; the schema type stays `string` either way.
   message: z.string(),
   providerMessage: z.string().optional(),
 });
 
 const ItemProductStateSchema = z.object({
   isUpdated: z.boolean(),
-  lastUpdatedAt: z.union([z.string(), z.date()]).nullable(),
+  lastUpdatedAt: z.string().nullable(),
   warnings: z.array(ItemProductStepWarningSchema).optional(),
+});
+
+const ItemProductsStatusDetailSchema = z.object({
+  accounts: ItemProductStateSchema.nullable(),
+  creditCards: ItemProductStateSchema.nullable(),
+  transactions: ItemProductStateSchema.nullable(),
+  investments: ItemProductStateSchema.nullable(),
+  investmentTransactions: ItemProductStateSchema.nullable(),
+  identity: ItemProductStateSchema.nullable(),
+  paymentData: ItemProductStateSchema.nullable(),
+  loans: ItemProductStateSchema.nullable(),
+  accountStatements: ItemProductStateSchema.nullable(),
+});
+
+const ItemErrorSchema = z.object({
+  code: z.string(),
+  message: z.string().nullable(),
 });
 
 const ItemSchema = z.object({
@@ -58,12 +77,15 @@ const ItemSchema = z.object({
   connectorName: z.string().describe('Underlying connector name (institution)'),
   status: z.string().describe('Current item status (e.g. UPDATED, LOGIN_ERROR)'),
   executionStatus: z.string().describe('Current execution status'),
-  statusDetail: z.record(z.unknown()).nullable(),
+  statusDetail: ItemProductsStatusDetailSchema.nullable(),
+  error: ItemErrorSchema.nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastUpdatedAt: z.string().nullable(),
-  // PII — see redaction note above. clientUserId is the operator's own
-  // identifier for the end-user; not guaranteed to be a UUID.
+  // Operator-controlled identifier for the end-user — typically a UUID,
+  // email, or numeric customer id. Passed through verbatim (same posture
+  // as `webhookUrl`) because it's not free text from a bank; the LLM
+  // must still treat it as data, not as instructions.
   clientUserId: z.string().nullable(),
   webhookUrl: z.string().nullable(),
   consecutiveFailedLoginAttempts: z.number(),
@@ -85,6 +107,68 @@ function dateToIso(value: Date | string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   if (value instanceof Date) return value.toISOString();
   return value;
+}
+
+/**
+ * Map one product state, wrapping any institution-composed strings inside
+ * `warnings[]` in `<untrusted>` so the LLM treats them as data. The shape
+ * mirrors `ItemProductStateSchema`.
+ */
+type ProductStateLike = {
+  isUpdated: boolean;
+  lastUpdatedAt: Date | string | null;
+  warnings?: Array<{ code: string; message: string; providerMessage?: string }>;
+};
+function mapProductState(
+  state: ProductStateLike | null | undefined,
+): z.infer<typeof ItemProductStateSchema> | null {
+  if (state === null || state === undefined) return null;
+  const warnings = state.warnings?.map((w) => ({
+    code: w.code,
+    message: wrapUntrusted(w.message) ?? w.message,
+    providerMessage:
+      w.providerMessage !== undefined
+        ? wrapUntrusted(w.providerMessage) ?? undefined
+        : undefined,
+  }));
+  return {
+    isUpdated: state.isUpdated,
+    lastUpdatedAt: dateToIso(state.lastUpdatedAt),
+    warnings,
+  };
+}
+
+/**
+ * Map the full statusDetail object. Pluggy returns each product slot as
+ * `null` when not requested or an `ItemProductState` otherwise; we keep
+ * that shape so the LLM can see which products were attempted.
+ */
+type StatusDetailLike = {
+  accounts: ProductStateLike | null;
+  creditCards: ProductStateLike | null;
+  transactions: ProductStateLike | null;
+  investments: ProductStateLike | null;
+  investmentTransactions: ProductStateLike | null;
+  identity: ProductStateLike | null;
+  paymentData: ProductStateLike | null;
+  loans: ProductStateLike | null;
+  accountStatements: ProductStateLike | null;
+};
+function mapStatusDetail(
+  detail: StatusDetailLike | null | undefined,
+): z.infer<typeof ItemProductsStatusDetailSchema> | null {
+  if (detail === null || detail === undefined) return null;
+  return {
+    accounts: mapProductState(detail.accounts),
+    creditCards: mapProductState(detail.creditCards),
+    transactions: mapProductState(detail.transactions),
+    investments: mapProductState(detail.investments),
+    investmentTransactions: mapProductState(detail.investmentTransactions),
+    identity: mapProductState(detail.identity),
+    paymentData: mapProductState(detail.paymentData),
+    loans: mapProductState(detail.loans),
+    accountStatements: mapProductState(detail.accountStatements),
+  };
 }
 
 export function registerGetItemTool(server: McpServer): void {
@@ -162,21 +246,29 @@ export function registerGetItemTool(server: McpServer): void {
         const client = getPluggyClient();
         const it = await client.fetchItem(itemId);
 
-        // `clientUserId` is the operator's PII bridge — treat it like a
-        // person name (mask via `redactOwnerName`) when redaction is on
-        // so a UUID stays as-is but a human-shaped value gets initials.
-        const { redact } = sec;
+        // `clientUserId` is operator-controlled (typically a UUID, email
+        // or numeric customer id) — pass through verbatim, same posture
+        // as `webhookUrl`. Treating it like a person name and running it
+        // through `redactOwnerName` mangles non-name shapes.
         const item = {
           id: it.id,
           connectorId: it.connector.id,
           connectorName: wrapUntrusted(it.connector.name) ?? it.connector.name,
           status: it.status,
           executionStatus: it.executionStatus,
-          statusDetail: (it.statusDetail as Record<string, unknown> | null) ?? null,
+          statusDetail: mapStatusDetail(
+            it.statusDetail as StatusDetailLike | null | undefined,
+          ),
+          // Surface the `error` field so the LLM can branch on a finished
+          // failure state. The `message` is institution-composed free
+          // text — wrap to keep the LLM from treating it as instructions.
+          error: it.error
+            ? { code: it.error.code, message: wrapUntrusted(it.error.message ?? null) }
+            : null,
           createdAt: dateToIso(it.createdAt) ?? '',
           updatedAt: dateToIso(it.updatedAt) ?? '',
           lastUpdatedAt: dateToIso(it.lastUpdatedAt),
-          clientUserId: redact ? redactOwnerName(it.clientUserId) : it.clientUserId,
+          clientUserId: it.clientUserId,
           // webhookUrl is operator-controlled — pass through; not free
           // text from a bank.
           webhookUrl: it.webhookUrl,
