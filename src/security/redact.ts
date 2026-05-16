@@ -76,11 +76,30 @@ export function redactCardNumber(pan?: string | null): string | null {
 
 /**
  * Account-holder full name: first name + last initial (e.g. `"Italo M."`).
- * Single-token names pass through — there's no last name to abbreviate
- * and we don't want to drop the only signal the model has.
  *
- * Already-redacted names (matching `Foo X.`) are returned unchanged.
+ * Policy:
+ *  - Single-token names (e.g. `"Madonna"`) return first char + `***`
+ *    (e.g. `"M***"`). The token itself is identifying enough that we
+ *    can't just pass it through.
+ *  - Multi-token names return `"FirstName X."` where `X` is the initial
+ *    of the LAST meaningful surname token. Brazilian generational suffixes
+ *    (Filho, Neto, Junior/Júnior, Sobrinho) and noble particles
+ *    (da, de, do, dos, das) are skipped when picking the surname token,
+ *    so `"Pedro Almeida Filho"` becomes `"Pedro A."` (not `"Pedro F."`)
+ *    and `"João da Silva"` becomes `"João S."` (not `"João d."`).
+ *  - Already-redacted values (matching the exact output shape) pass
+ *    through.
  */
+const REDACTED_OWNER_RE = /^[A-Z][a-záéíóúâêôãõç]* [A-Z]\.$/;
+const NAME_SUFFIXES = new Set([
+  'filho',
+  'neto',
+  'junior',
+  'júnior',
+  'sobrinho',
+]);
+const NAME_PARTICLES = new Set(['da', 'de', 'do', 'dos', 'das']);
+
 export function redactOwnerName(name?: string | null): string | null {
   if (name === null || name === undefined) return null;
   if (name === '') return name;
@@ -93,14 +112,28 @@ export function redactOwnerName(name?: string | null): string | null {
   if (REDACTED_OWNER_RE.test(trimmed)) return trimmed;
 
   const tokens = trimmed.split(/\s+/);
-  if (tokens.length === 1) return tokens[0];
+  if (tokens.length === 1) {
+    // Single-token names are too identifying to pass through verbatim.
+    const initial = tokens[0][0] ?? '';
+    return `${initial}***`;
+  }
 
   const first = tokens[0];
-  const lastInitial = tokens[tokens.length - 1][0]?.toUpperCase() ?? '';
+
+  // Walk from the right, skipping suffixes and particles, until we find
+  // a token we can extract a surname initial from. Fall back to the very
+  // last token if everything was filtered.
+  let surnameToken = tokens[tokens.length - 1];
+  for (let i = tokens.length - 1; i > 0; i--) {
+    const lower = tokens[i].toLowerCase();
+    if (NAME_SUFFIXES.has(lower) || NAME_PARTICLES.has(lower)) continue;
+    surnameToken = tokens[i];
+    break;
+  }
+
+  const lastInitial = surnameToken[0]?.toUpperCase() ?? '';
   return `${first} ${lastInitial}.`;
 }
-
-const REDACTED_OWNER_RE = /^[A-Z][a-záéíóúâêôãõç]* [A-Z]\.$/;
 
 /**
  * Email address: keep first 3 chars of local-part + domain
