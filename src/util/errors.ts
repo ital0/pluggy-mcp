@@ -68,16 +68,13 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
     code?: string;
     cause?: { statusCode?: number };
   };
-  const status =
-    typeof anyErr?.response?.statusCode === 'number'
-      ? anyErr.response.statusCode
-      : typeof anyErr?.response?.status === 'number'
-        ? anyErr.response.status
-        : typeof anyErr?.statusCode === 'number'
-          ? anyErr.statusCode
-          : typeof anyErr?.cause?.statusCode === 'number'
-            ? anyErr.cause.statusCode
-            : null;
+  const status: number | null =
+    [
+      anyErr?.response?.statusCode,
+      anyErr?.response?.status,
+      anyErr?.statusCode,
+      anyErr?.cause?.statusCode,
+    ].find((v): v is number => typeof v === 'number') ?? null;
   const code = typeof anyErr?.code === 'string' ? anyErr.code : null;
   return { status, code };
 }
