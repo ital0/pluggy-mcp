@@ -34,9 +34,18 @@ export interface AuditEvent {
 /**
  * Cheap 12-char fingerprint of a value. Use only for log correlation —
  * never as a security token.
+ *
+ * Safety: must NEVER throw — callers invoke this from `finally` blocks.
+ * `undefined` is coerced to a stable empty marker; serialization or hash
+ * failures fall back to a constant sentinel.
  */
 export function hashForAudit(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 12);
+  try {
+    const coerced = value === undefined ? '' : value;
+    return createHash('sha256').update(JSON.stringify(coerced) ?? '').digest('hex').slice(0, 12);
+  } catch {
+    return 'hash_failed';
+  }
 }
 
 /**
@@ -45,10 +54,30 @@ export function hashForAudit(value: unknown): string {
  */
 export function audit(ev: AuditEvent): void {
   if (process.env.PLUGGY_MCP_AUDIT === 'false') return;
-  const line = {
-    ts: new Date().toISOString(),
-    event: 'audit',
-    ...ev,
-  };
-  console.error(JSON.stringify(line));
+  try {
+    const line = {
+      ts: new Date().toISOString(),
+      event: 'audit',
+      ...ev,
+    };
+    console.error(JSON.stringify(line));
+  } catch (err) {
+    // Last-ditch fallback: emit a minimal line so the operator at least
+    // sees that an audit event was attempted. Wrapped in its own try/catch
+    // because `console.error` itself can throw on a broken stderr pipe.
+    try {
+      console.error(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          event: 'audit_emit_failed',
+          tool: ev?.tool,
+          outcome: ev?.outcome,
+          sensitive: ev?.sensitive,
+          reason: (err as { message?: unknown })?.message ?? 'unknown',
+        }),
+      );
+    } catch {
+      // Nothing else we can do — silently drop.
+    }
+  }
 }
