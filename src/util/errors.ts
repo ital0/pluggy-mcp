@@ -53,12 +53,12 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
   // got's HTTPError exposes `.response.statusCode`; some wrappers store
   // it on `.statusCode` directly. Both are read defensively.
   const anyErr = err as { response?: { statusCode?: number }; statusCode?: number; code?: string };
-  const status =
-    typeof anyErr?.response?.statusCode === 'number'
-      ? anyErr.response.statusCode
-      : typeof anyErr?.statusCode === 'number'
-        ? anyErr.statusCode
-        : null;
+  let status: number | null = null;
+  if (typeof anyErr?.response?.statusCode === 'number') {
+    status = anyErr.response.statusCode;
+  } else if (typeof anyErr?.statusCode === 'number') {
+    status = anyErr.statusCode;
+  }
   const code = typeof anyErr?.code === 'string' ? anyErr.code : null;
   return { status, code };
 }
@@ -115,30 +115,38 @@ export function classifyAndReport(
   let errorCode: ErrorCode = 'UNKNOWN';
   let message = 'Unexpected error talking to Pluggy. See server logs.';
 
-  if (status === 401) {
-    errorCode = 'UNAUTHORIZED';
-    message =
-      'Pluggy rejected the credentials (401). Rotate PLUGGY_CLIENT_ID/SECRET.';
-  } else if (status === 400) {
-    // Pluggy's /auth handshake returns 400 — not 401 — for malformed or
-    // invalid credentials, and the SDK only surfaces a raw HTTPError for
-    // that pre-flight call (data calls have their non-2xx bodies caught
-    // and rejected as plain objects instead). Treating a bare 400 from a
-    // tool call as UNAUTHORIZED gives the model the right next step.
-    errorCode = 'UNAUTHORIZED';
-    message =
-      'Pluggy rejected the credentials (400 on /auth). Verify PLUGGY_CLIENT_ID/SECRET.';
-  } else if (status === 403) {
-    errorCode = 'FORBIDDEN';
-    message =
-      'Pluggy returned 403 — premium feature or item not authorized for these credentials.';
-  } else if (status === 404) {
-    errorCode = 'NOT_FOUND';
-    message =
-      'Pluggy returned 404 — the requested resource does not exist or was deleted.';
-  } else if (status === 429) {
-    errorCode = 'RATE_LIMITED';
-    message = 'Pluggy returned 429 — rate limited. Back off and retry.';
+  // Pluggy's /auth handshake returns 400 — not 401 — for malformed or
+  // invalid credentials, and the SDK only surfaces a raw HTTPError for
+  // that pre-flight call (data calls have their non-2xx bodies caught
+  // and rejected as plain objects instead). Treating a bare 400 from a
+  // tool call as UNAUTHORIZED gives the model the right next step.
+  const STATUS_MAP: Record<number, { errorCode: ErrorCode; message: string }> = {
+    400: {
+      errorCode: 'UNAUTHORIZED',
+      message: 'Pluggy rejected the credentials (400 on /auth). Verify PLUGGY_CLIENT_ID/SECRET.',
+    },
+    401: {
+      errorCode: 'UNAUTHORIZED',
+      message: 'Pluggy rejected the credentials (401). Rotate PLUGGY_CLIENT_ID/SECRET.',
+    },
+    403: {
+      errorCode: 'FORBIDDEN',
+      message: 'Pluggy returned 403 — premium feature or item not authorized for these credentials.',
+    },
+    404: {
+      errorCode: 'NOT_FOUND',
+      message: 'Pluggy returned 404 — the requested resource does not exist or was deleted.',
+    },
+    429: {
+      errorCode: 'RATE_LIMITED',
+      message: 'Pluggy returned 429 — rate limited. Back off and retry.',
+    },
+  };
+
+  const mapped = status !== null ? STATUS_MAP[status] : undefined;
+  if (mapped) {
+    errorCode = mapped.errorCode;
+    message = mapped.message;
   } else if (status !== null && status >= 500) {
     errorCode = 'UPSTREAM_5XX';
     message = 'Pluggy returned a transient server error. Retry shortly.';
