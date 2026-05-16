@@ -53,6 +53,11 @@ export function hashArgsSafely(
   if (args && typeof args === 'object') {
     const obj = args as Record<string, unknown>;
     for (const field of allowedFields) {
+      // Guard against prototype-chain access. If `allowedFields` ever
+      // becomes externally influenced (e.g. a value like `"__proto__"`
+      // or `"constructor"` sneaks in), unguarded property access would
+      // pull from `Object.prototype` and hash a function reference.
+      if (!Object.hasOwn(obj, field)) continue;
       const v = obj[field];
       if (typeof v === 'string') {
         out[`${field}Hash`] = hashForAudit(v);
