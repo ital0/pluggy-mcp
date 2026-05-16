@@ -24,6 +24,17 @@ const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
 
 /**
+ * Hardcoded user-facing message for in-process rate-limit denials. Lives
+ * here (rather than per-tool) so every caller speaks with one voice and
+ * we never interpolate runtime state (limits, retry-after) into the
+ * model-facing string — same posture as `src/util/errors.ts`. The
+ * accompanying `LOCAL_RATE_LIMITED` error code stays distinct from an
+ * upstream Pluggy 429 so the LLM can tell the two apart.
+ */
+export const LOCAL_RATE_LIMITED_MESSAGE =
+  'Local MCP rate limit exceeded for this tool. Wait briefly and retry.';
+
+/**
  * Hard cap on per-tool hit arrays. Comfortably above the worst-case
  * legitimate traffic over the day window (25x the default day budget),
  * but bounded so an unbounded misconfiguration can't blow process memory.

@@ -28,6 +28,7 @@ import {
   hashForAudit,
   wrapUntrusted,
   UNTRUSTED_PREAMBLE,
+  LOCAL_RATE_LIMITED_MESSAGE,
 } from '../security/index.js';
 
 const BankDataSchema = z.object({
@@ -78,14 +79,6 @@ const AccountSchema = z.object({
   bankData: BankDataSchema.nullable(),
   creditData: CreditDataSchema.nullable(),
 });
-
-// Hardcoded user-facing message for in-process rate-limit denials. Same
-// security posture as `src/util/errors.ts` — never interpolate runtime
-// state (limits, retry-after) into the model-facing string. We use a
-// distinct `LOCAL_RATE_LIMITED` code so the LLM can tell apart a local
-// per-tool throttle from an upstream Pluggy 429.
-const LOCAL_RATE_LIMITED_MESSAGE =
-  'Local MCP rate limit exceeded for this tool. Wait briefly and retry.';
 
 // Flat output shape — `z.discriminatedUnion` can't be passed to
 // `registerTool`'s `outputSchema` because the SDK wraps the argument in

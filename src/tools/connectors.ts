@@ -15,14 +15,8 @@ import {
   hashArgsSafely,
   wrapUntrusted,
   UNTRUSTED_PREAMBLE,
+  LOCAL_RATE_LIMITED_MESSAGE,
 } from '../security/index.js';
-
-// Hardcoded — same posture as `src/util/errors.ts`; never let runtime
-// state leak into the model-facing string. `LOCAL_RATE_LIMITED` is a
-// distinct code from upstream Pluggy 429s so the LLM can tell apart a
-// per-tool throttle from an upstream backoff signal.
-const LOCAL_RATE_LIMITED_MESSAGE =
-  'Local MCP rate limit exceeded for this tool. Wait briefly and retry.';
 
 // Subset of the SDK's Connector shape — we expose only stable fields that
 // are useful for an LLM picking a connector. The SDK adds new optional
