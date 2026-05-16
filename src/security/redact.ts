@@ -10,6 +10,7 @@
  *   - redactOwnerName — used today by getAccounts; identity will reuse
  *   - redactEmail — for identity, transactions (payer/receiver), recurring-payments
  *   - redactPhone — for identity
+ *   - redactBoletoLine — for boleto digitable line / barcode (transactions, bills)
  *
  * Do not delete these because they appear unused — they are the canonical
  * masking implementations and must not be re-invented per-tool.
@@ -48,7 +49,8 @@
  * redactors are the public surface and document each policy individually.
  */
 function maskLast4(value: string, noDigitsFallback: string): string {
-  const digits = value.replace(/\D/g, '');
+  // NFKC normalize: collapse Unicode digits (fullwidth, Arabic-Indic) to ASCII before stripping.
+  const digits = value.normalize('NFKC').replace(/\D/g, '');
   if (digits.length === 0) return noDigitsFallback;
   return `****${digits.slice(-4)}`;
 }
@@ -69,7 +71,8 @@ export function redactCpf(cpf?: string | null): string | null {
   if (cpf === null || cpf === undefined) return null;
   if (cpf === '') return cpf;
 
-  const digits = cpf.replace(/\D/g, '');
+  // NFKC normalize: collapse Unicode digits (fullwidth, Arabic-Indic) to ASCII before stripping.
+  const digits = cpf.normalize('NFKC').replace(/\D/g, '');
   if (digits.length !== 11) {
     // Not a valid-length CPF (or an already-masked value with most digits
     // stripped) — fully mask. Keeps the function idempotent on its own
@@ -218,4 +221,26 @@ export function redactPhone(phone?: string | null): string | null {
   // fallback here is the original input, not the masked sentinel used
   // by account / card numbers.
   return maskLast4(phone, phone);
+}
+
+/**
+ * Brazilian boleto digitable line / barcode (47 / 44 digits). These are
+ * transferable payment instruments — anyone in possession of the full
+ * value can pay the boleto. We keep only the last 6 characters so the
+ * model can still disambiguate two boletos in a list without exposing
+ * enough material to settle them.
+ *
+ * Output shape `"****XXXXXX"` is idempotent: stripping non-digits from
+ * the masked form yields 6 digits, which re-emits as the same 6 again.
+ *
+ * Security primitive — exported alongside the rest. Apply when redact
+ * is on; pass through the value unchanged otherwise.
+ */
+export function redactBoletoLine(line?: string | null): string | null {
+  if (line === null || line === undefined) return null;
+  if (line === '') return line;
+  // NFKC normalize: collapse Unicode digits (fullwidth, Arabic-Indic) to ASCII before stripping.
+  const digits = line.normalize('NFKC').replace(/\D/g, '');
+  if (digits.length === 0) return '****';
+  return `****${digits.slice(-6)}`;
 }
