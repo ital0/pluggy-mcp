@@ -31,8 +31,8 @@ import {
   wrapUntrusted,
   UNTRUSTED_PREAMBLE,
   LOCAL_RATE_LIMITED_MESSAGE,
+  ITEM_NOT_ALLOWED_MESSAGE,
 } from '../security/index.js';
-import { ITEM_NOT_ALLOWED_MESSAGE } from './items.js';
 
 const BankDataSchema = z.object({
   transferNumber: z.string().nullable(),

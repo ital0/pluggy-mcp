@@ -28,17 +28,8 @@ import {
   wrapUntrusted,
   UNTRUSTED_PREAMBLE,
   LOCAL_RATE_LIMITED_MESSAGE,
+  ITEM_NOT_ALLOWED_MESSAGE,
 } from '../security/index.js';
-
-/**
- * Hardcoded user-facing message for allowlist denials. Lives at module
- * scope so every tool that needs it speaks with one voice — same posture
- * as `LOCAL_RATE_LIMITED_MESSAGE` in `src/security/rateLimit.ts`. Never
- * interpolates the offending id (that would leak the operator's allow/deny
- * decision into the LLM context).
- */
-export const ITEM_NOT_ALLOWED_MESSAGE =
-  'This itemId is not in PLUGGY_ITEM_IDS allowlist.';
 
 const ItemProductStepWarningSchema = z.object({
   code: z.string(),

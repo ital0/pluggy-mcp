@@ -9,4 +9,5 @@
 export * from './redact.js';
 export * from './untrusted.js';
 export * from './rateLimit.js';
+export * from './allowlist.js';
 export * from './audit.js';

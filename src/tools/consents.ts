@@ -28,8 +28,8 @@ import {
   hashArgsSafely,
   hashForAudit,
   LOCAL_RATE_LIMITED_MESSAGE,
+  ITEM_NOT_ALLOWED_MESSAGE,
 } from '../security/index.js';
-import { ITEM_NOT_ALLOWED_MESSAGE } from './items.js';
 
 const ConsentSchema = z.object({
   id: z.string().describe('Consent id (UUID)'),
