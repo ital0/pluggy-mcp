@@ -22,6 +22,7 @@
 
 import { PluggyClient } from 'pluggy-sdk';
 import { loadPluggyConfig } from '../config.js';
+import { logEvent } from '../util/log.js';
 import { MissingCredentialsError } from './client.js';
 
 /**
@@ -123,14 +124,20 @@ export async function pluggyRawFetch(
   const res = await fetch(url, init);
 
   // Read body once. Some premium endpoints return text on 403 (e.g.
-  // "feature not enabled"); fall back gracefully so we don't crash on a
-  // non-JSON response.
+  // "feature not enabled"); on the error path we still wrap the raw text
+  // so the operator log has something to inspect. On the 2xx path,
+  // non-JSON is treated as a hard failure — these endpoints are
+  // documented as JSON and a text body in a "success" response usually
+  // indicates an upstream proxy or auth interstitial we should NOT
+  // surface as data.
   let parsed: unknown = undefined;
+  let jsonOk = true;
   const text = await res.text();
   if (text.length > 0) {
     try {
       parsed = JSON.parse(text);
     } catch {
+      jsonOk = false;
       // Preserve the raw text — operator-visible at debug time only;
       // tool callers never surface this in the LLM channel.
       parsed = { rawBody: text };
@@ -138,6 +145,14 @@ export async function pluggyRawFetch(
   }
 
   if (!res.ok) {
+    throw new PluggyRawFetchError(res.status, parsed);
+  }
+  if (!jsonOk) {
+    logEvent('raw_fetch_non_json_body', {
+      url,
+      status: res.status,
+      len: text.length,
+    });
     throw new PluggyRawFetchError(res.status, parsed);
   }
   return parsed;
