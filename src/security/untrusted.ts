@@ -25,18 +25,39 @@ const ESCAPED_OPEN = '&lt;untrusted&gt;';
 const ESCAPED_CLOSE = '&lt;/untrusted&gt;';
 
 /**
+ * Maximum input length we will process. Upstream "free-text" fields
+ * (memos, descriptions, merchant names) should be well under a kilobyte;
+ * a 64 KB cap is generous for legitimate data and bounds the work done
+ * by `split`/`join` against a pathologically large input. Larger inputs
+ * are truncated with an explicit marker so the LLM can see that data
+ * was elided rather than silently losing context.
+ */
+const MAX_UNTRUSTED_INPUT_BYTES = 64 * 1024;
+const TRUNCATION_MARKER = '... [truncated]';
+
+/**
  * Wrap `text` in `<untrusted>...</untrusted>`. Returns `null`/empty inputs
  * unchanged so the surrounding response shape stays consistent.
  *
  * Always escapes any embedded delimiters (open and close) and always
  * wraps — there is no early-return for already-wrapped inputs. Double
  * wrapping is intentional and safe.
+ *
+ * Inputs longer than `MAX_UNTRUSTED_INPUT_BYTES` are truncated before
+ * escaping/wrapping. Even though `split`/`join` is O(N), keeping the
+ * worst-case bounded protects the stdio transport from a single
+ * upstream value that could otherwise dominate the response.
  */
 export function wrapUntrusted(text?: string | null): string | null {
   if (text === null || text === undefined) return null;
   if (text === '') return text;
 
-  const escapedClose = text.split(CLOSE).join(ESCAPED_CLOSE);
+  const capped =
+    text.length > MAX_UNTRUSTED_INPUT_BYTES
+      ? text.slice(0, MAX_UNTRUSTED_INPUT_BYTES) + TRUNCATION_MARKER
+      : text;
+
+  const escapedClose = capped.split(CLOSE).join(ESCAPED_CLOSE);
   const escaped = escapedClose.split(OPEN).join(ESCAPED_OPEN);
   return `${OPEN}${escaped}${CLOSE}`;
 }
