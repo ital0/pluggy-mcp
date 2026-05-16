@@ -208,7 +208,21 @@ export function registerGetAccountsTool(server: McpServer): void {
           number: redact ? redactAccountNumber(a.number) : a.number,
           owner: redact ? redactOwnerName(a.owner) : a.owner,
           taxNumber: redact ? redactCpf(a.taxNumber) : a.taxNumber,
-          bankData: a.bankData,
+          // Explicit field copy of bankData so a future SDK addition can't
+          // silently leak — and `transferNumber` is the bank-transfer
+          // identifier (agency / account / digit), same PII tier as
+          // `number`, so it gets the same redactor.
+          bankData: a.bankData
+            ? {
+                transferNumber: redact
+                  ? redactAccountNumber(a.bankData.transferNumber)
+                  : a.bankData.transferNumber,
+                closingBalance: a.bankData.closingBalance,
+                automaticallyInvestedBalance: a.bankData.automaticallyInvestedBalance,
+                overdraftUsedLimit: a.bankData.overdraftUsedLimit,
+                unarrangedOverdraftAmount: a.bankData.unarrangedOverdraftAmount,
+              }
+            : null,
           // The SDK returns Date for credit-card balance dates; serialise to
           // ISO strings so the JSON envelope is stable and validates.
           creditData: a.creditData
@@ -550,7 +564,17 @@ export function registerGetAccountTool(server: McpServer): void {
           number: redact ? redactAccountNumber(a.number) : a.number,
           owner: redact ? redactOwnerName(a.owner) : a.owner,
           taxNumber: redact ? redactCpf(a.taxNumber) : a.taxNumber,
-          bankData: a.bankData,
+          bankData: a.bankData
+            ? {
+                transferNumber: redact
+                  ? redactAccountNumber(a.bankData.transferNumber)
+                  : a.bankData.transferNumber,
+                closingBalance: a.bankData.closingBalance,
+                automaticallyInvestedBalance: a.bankData.automaticallyInvestedBalance,
+                overdraftUsedLimit: a.bankData.overdraftUsedLimit,
+                unarrangedOverdraftAmount: a.bankData.unarrangedOverdraftAmount,
+              }
+            : null,
           creditData: a.creditData
             ? {
                 ...a.creditData,
