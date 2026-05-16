@@ -436,3 +436,289 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
     },
   );
 }
+
+// ---------------------------------------------------------------------------
+// getAccount (masked single-account read)
+// ---------------------------------------------------------------------------
+//
+// Sibling of `getAccounts` for the single-account case. PII fields
+// (`number`, `owner`, `taxNumber`) are masked by the same helpers — for
+// the unmasked variant, see `getRawAccountDetails` above. We intentionally
+// do NOT mark this tool `sensitive` in the audit: the masked payload is
+// no more revealing than `getAccounts` and we don't want sensitive-event
+// log shipping to amplify ordinary reads.
+
+const GetAccountOutputShape = {
+  ok: z.boolean(),
+  account: AccountSchema.optional(),
+  errorCode: ErrorCodeEnum.optional(),
+  requestId: z.string().optional(),
+  message: z.string().optional(),
+};
+
+export function registerGetAccountTool(server: McpServer): void {
+  const toolName = 'getAccount';
+  server.registerTool(
+    toolName,
+    {
+      description:
+        UNTRUSTED_PREAMBLE +
+        '\n\n' +
+        'Fetch a single Pluggy account by id. The CPF (taxNumber), full ' +
+        'account number, and owner name are MASKED by default — call ' +
+        '`getRawAccountDetails` if you explicitly need the unmasked values ' +
+        '(every such call is audit-logged).',
+      inputSchema: {
+        accountId: z
+          .string()
+          .uuid()
+          .describe('The Pluggy account id (UUID) to fetch.'),
+      },
+      outputSchema: GetAccountOutputShape,
+      annotations: {
+        title: 'Get Pluggy Account',
+        readOnlyHint: true,
+        openWorldHint: true,
+        idempotentHint: true,
+      },
+    },
+    async ({ accountId }) => {
+      const start = performance.now();
+      let outcome: 'success' | 'error' = 'success';
+      let errorCode: string | undefined;
+      let requestId: string | undefined;
+      let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
+      try {
+        const sec = loadSecurityConfig();
+        const rl = sec.rateLimit
+          ? checkRateLimit(toolName)
+          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
+        if (!rl.allowed) {
+          outcome = 'error';
+          errorCode = 'LOCAL_RATE_LIMITED';
+          rateLimitReason = rl.reason;
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'LOCAL_RATE_LIMITED' as const,
+            message: LOCAL_RATE_LIMITED_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
+          };
+        }
+
+        const client = getPluggyClient();
+        const a = await client.fetchAccount(accountId);
+
+        const { redact } = sec;
+        const account = {
+          id: a.id,
+          itemId: a.itemId,
+          type: a.type,
+          subtype: a.subtype,
+          balance: a.balance,
+          name: wrapUntrusted(a.name) ?? a.name,
+          marketingName: wrapUntrusted(a.marketingName),
+          currencyCode: a.currencyCode,
+          number: redact ? redactAccountNumber(a.number) : a.number,
+          owner: redact ? redactOwnerName(a.owner) : a.owner,
+          taxNumber: redact ? redactCpf(a.taxNumber) : a.taxNumber,
+          bankData: a.bankData,
+          creditData: a.creditData
+            ? {
+                ...a.creditData,
+                balanceCloseDate: toIsoIfDate(a.creditData.balanceCloseDate),
+                balanceDueDate: toIsoIfDate(a.creditData.balanceDueDate),
+              }
+            : null,
+        };
+
+        const output = { ok: true as const, account };
+        return {
+          structuredContent: output,
+          content: [
+            {
+              type: 'text' as const,
+              // Generic — keep the id out of the free-text channel; it
+              // is already in `structuredContent.account.id`.
+              text: 'Returned masked account details.',
+            },
+          ],
+        };
+      } catch (err) {
+        outcome = 'error';
+        const safe = classifyAndReport(err, {
+          tool: toolName,
+          operation: 'fetchAccount',
+        });
+        errorCode = safe.errorCode;
+        requestId = safe.requestId;
+        const errorOutput = {
+          ok: false as const,
+          errorCode: safe.errorCode,
+          requestId: safe.requestId,
+          message: safe.message,
+        };
+        return {
+          isError: true,
+          structuredContent: errorOutput,
+          content: [{ type: 'text' as const, text: safe.message }],
+        };
+      } finally {
+        audit({
+          tool: toolName,
+          outcome,
+          errorCode,
+          durationMs: Math.round(performance.now() - start),
+          ...hashArgsSafely({ accountId }, ['accountId']),
+          requestId,
+          rateLimitReason,
+        });
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// getRealTimeBalance
+// ---------------------------------------------------------------------------
+//
+// Hits `GET /accounts/{id}/balance` via the SDK subclass added in
+// `src/pluggy/client.ts`. This endpoint is Open-Finance-only — non-OF
+// accounts will surface a 4xx from upstream, which our classifier
+// translates into the right error envelope. The response carries only
+// numbers + an ISO timestamp, no PII; no redaction needed.
+
+const RealTimeBalanceSchema = z.object({
+  balance: z.number(),
+  blockedBalance: z.number().nullable(),
+  automaticallyInvestedBalance: z.number().nullable(),
+  currencyCode: z.string(),
+  updateDateTime: z.string(),
+});
+
+const GetRealTimeBalanceOutputShape = {
+  ok: z.boolean(),
+  accountId: z.string().optional(),
+  balance: RealTimeBalanceSchema.optional(),
+  errorCode: ErrorCodeEnum.optional(),
+  requestId: z.string().optional(),
+  message: z.string().optional(),
+};
+
+export function registerGetRealTimeBalanceTool(server: McpServer): void {
+  const toolName = 'getRealTimeBalance';
+  server.registerTool(
+    toolName,
+    {
+      description:
+        'Fetch the real-time balance for a Pluggy account directly from the ' +
+        'financial institution, without triggering a full item sync. This ' +
+        'endpoint is only available for Open Finance connectors — non-OF ' +
+        'accounts will return a NOT_FOUND or FORBIDDEN error. The call ' +
+        'counts against the institution-imposed rate limit shared with item ' +
+        'syncs; expect 429s under load.',
+      inputSchema: {
+        accountId: z
+          .string()
+          .uuid()
+          .describe('The Pluggy account id (UUID) to refresh.'),
+      },
+      outputSchema: GetRealTimeBalanceOutputShape,
+      annotations: {
+        title: 'Get Real-Time Balance',
+        readOnlyHint: true,
+        openWorldHint: true,
+        // Each call mutates Pluggy's cached balance for the account (the
+        // docs explicitly say a subsequent GET /accounts/{id} reflects the
+        // refreshed value). We still claim `idempotentHint: true` because
+        // re-running with the same input produces the same conceptual
+        // result — the operator's intent is unchanged across retries.
+        idempotentHint: true,
+      },
+    },
+    async ({ accountId }) => {
+      const start = performance.now();
+      let outcome: 'success' | 'error' = 'success';
+      let errorCode: string | undefined;
+      let requestId: string | undefined;
+      let rateLimitReason: 'PER_MINUTE' | 'PER_DAY' | undefined;
+      try {
+        const sec = loadSecurityConfig();
+        const rl = sec.rateLimit
+          ? checkRateLimit(toolName)
+          : { allowed: true as const, retryAfterMs: undefined, reason: undefined };
+        if (!rl.allowed) {
+          outcome = 'error';
+          errorCode = 'LOCAL_RATE_LIMITED';
+          rateLimitReason = rl.reason;
+          const errorOutput = {
+            ok: false as const,
+            errorCode: 'LOCAL_RATE_LIMITED' as const,
+            message: LOCAL_RATE_LIMITED_MESSAGE,
+          };
+          return {
+            isError: true,
+            structuredContent: errorOutput,
+            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
+          };
+        }
+
+        const client = getPluggyClient();
+        const b = await client.fetchAccountBalance(accountId);
+
+        const balance = {
+          balance: b.balance,
+          blockedBalance: b.blockedBalance ?? null,
+          automaticallyInvestedBalance: b.automaticallyInvestedBalance ?? null,
+          currencyCode: b.currencyCode,
+          updateDateTime: b.updateDateTime,
+        };
+
+        const output = { ok: true as const, accountId, balance };
+        return {
+          structuredContent: output,
+          content: [
+            {
+              type: 'text' as const,
+              // Numeric value is non-PII; safe to include in the free-text
+              // channel for a quick "what's the balance" summary.
+              text: `Real-time balance: ${b.balance} ${b.currencyCode} (updated ${b.updateDateTime}).`,
+            },
+          ],
+        };
+      } catch (err) {
+        outcome = 'error';
+        const safe = classifyAndReport(err, {
+          tool: toolName,
+          operation: 'fetchAccountBalance',
+        });
+        errorCode = safe.errorCode;
+        requestId = safe.requestId;
+        const errorOutput = {
+          ok: false as const,
+          errorCode: safe.errorCode,
+          requestId: safe.requestId,
+          message: safe.message,
+        };
+        return {
+          isError: true,
+          structuredContent: errorOutput,
+          content: [{ type: 'text' as const, text: safe.message }],
+        };
+      } finally {
+        audit({
+          tool: toolName,
+          outcome,
+          errorCode,
+          durationMs: Math.round(performance.now() - start),
+          ...hashArgsSafely({ accountId }, ['accountId']),
+          requestId,
+          rateLimitReason,
+        });
+      }
+    },
+  );
+}
