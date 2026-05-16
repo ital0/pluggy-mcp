@@ -83,11 +83,17 @@ const ItemSchema = z.object({
   updatedAt: z.string(),
   lastUpdatedAt: z.string().nullable(),
   // Operator-controlled identifier for the end-user — typically a UUID,
-  // email, or numeric customer id. Passed through verbatim (same posture
-  // as `webhookUrl`) because it's not free text from a bank; the LLM
-  // must still treat it as data, not as instructions.
-  clientUserId: z.string().nullable(),
-  webhookUrl: z.string().nullable(),
+  // email, or numeric customer id. May carry PII (emails, CPFs), so we
+  // wrap it in `<untrusted>` in the mapper before it reaches the schema;
+  // the LLM must treat it as data, not as instructions.
+  clientUserId: z
+    .string()
+    .nullable()
+    .describe('Operator-supplied end-user id; wrapped in <untrusted> as it may carry PII.'),
+  webhookUrl: z
+    .string()
+    .nullable()
+    .describe('Operator-supplied webhook URL; wrapped in <untrusted>.'),
   consecutiveFailedLoginAttempts: z.number(),
   nextAutoSyncAt: z.string().nullable(),
   // We deliberately omit `userAction` and `parameter` from the surfaced
@@ -246,10 +252,11 @@ export function registerGetItemTool(server: McpServer): void {
         const client = getPluggyClient();
         const it = await client.fetchItem(itemId);
 
-        // `clientUserId` is operator-controlled (typically a UUID, email
-        // or numeric customer id) — pass through verbatim, same posture
-        // as `webhookUrl`. Treating it like a person name and running it
-        // through `redactOwnerName` mangles non-name shapes.
+        // `clientUserId` and `webhookUrl` are operator-controlled, but
+        // both may carry PII (emails, CPFs) or untrusted text. Wrap them
+        // in `<untrusted>` so the LLM treats them as data, never as
+        // instructions. Redaction primitives don't apply — these are not
+        // bank-supplied PII fields with a known shape.
         const item = {
           id: it.id,
           connectorId: it.connector.id,
@@ -268,10 +275,8 @@ export function registerGetItemTool(server: McpServer): void {
           createdAt: dateToIso(it.createdAt) ?? '',
           updatedAt: dateToIso(it.updatedAt) ?? '',
           lastUpdatedAt: dateToIso(it.lastUpdatedAt),
-          clientUserId: it.clientUserId,
-          // webhookUrl is operator-controlled — pass through; not free
-          // text from a bank.
-          webhookUrl: it.webhookUrl,
+          clientUserId: wrapUntrusted(it.clientUserId),
+          webhookUrl: wrapUntrusted(it.webhookUrl),
           consecutiveFailedLoginAttempts: it.consecutiveFailedLoginAttempts,
           nextAutoSyncAt: dateToIso(it.nextAutoSyncAt),
         };
