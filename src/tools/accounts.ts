@@ -404,7 +404,11 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Returned unmasked details for account ${a.id}.`,
+              // Generic text — the structured content carries the
+              // account id for the LLM. Avoid interpolating the id
+              // into the free-text channel where it'd show up in
+              // transcripts and conversation summaries.
+              text: 'Returned unmasked account details.',
             },
           ],
         };
