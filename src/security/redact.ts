@@ -35,6 +35,25 @@
  */
 
 /**
+ * Strip non-digit chars and emit `****` + last 4 of what remains. Shared by
+ * `redactAccountNumber`, `redactCardNumber`, and `redactPhone` — the three
+ * primitives that all collapse to "last-4 of digits-only".
+ *
+ * `noDigitsFallback` controls what happens when the input has zero digits
+ * after stripping: account/card primitives pass `'****'` (stable masked
+ * shape even for non-numeric inputs); phone passes the original value so
+ * non-numeric notes like `"no phone on file"` survive intact.
+ *
+ * @internal — keep call sites inside this module. The three exported
+ * redactors are the public surface and document each policy individually.
+ */
+function maskLast4(value: string, noDigitsFallback: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length === 0) return noDigitsFallback;
+  return `****${digits.slice(-4)}`;
+}
+
+/**
  * Brazilian CPF: 11 digits, conventionally rendered `NNN.NNN.NNN-NN`.
  * We keep the last 2 digits (the check-digits) so the model can still
  * disambiguate accounts visually without exposing the identifier.
@@ -74,11 +93,7 @@ export function redactCpf(cpf?: string | null): string | null {
 export function redactAccountNumber(number?: string | null): string | null {
   if (number === null || number === undefined) return null;
   if (number === '') return number;
-
-  const digits = number.replace(/\D/g, '');
-  if (digits.length === 0) return '****';
-  const last4 = digits.slice(-4);
-  return `****${last4}`;
+  return maskLast4(number, '****');
 }
 
 /**
@@ -91,11 +106,7 @@ export function redactAccountNumber(number?: string | null): string | null {
 export function redactCardNumber(pan?: string | null): string | null {
   if (pan === null || pan === undefined) return null;
   if (pan === '') return pan;
-
-  const digits = pan.replace(/\D/g, '');
-  if (digits.length === 0) return '****';
-  const last4 = digits.slice(-4);
-  return `****${last4}`;
+  return maskLast4(pan, '****');
 }
 
 /**
@@ -203,9 +214,8 @@ export function redactEmail(email?: string | null): string | null {
 export function redactPhone(phone?: string | null): string | null {
   if (phone === null || phone === undefined) return null;
   if (phone === '') return phone;
-
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length === 0) return phone;
-  const last4 = digits.slice(-4);
-  return `****${last4}`;
+  // Non-numeric notes (e.g. "no phone on file") survive intact — the
+  // fallback here is the original input, not the masked sentinel used
+  // by account / card numbers.
+  return maskLast4(phone, phone);
 }
