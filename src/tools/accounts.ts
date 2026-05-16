@@ -326,7 +326,9 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
         '\n\n' +
         'DESTRUCTIVE FOR PRIVACY: returns unmasked CPF, full account number, ' +
         'and account holder name for a single Pluggy account. Use only when ' +
-        'explicitly requested by the user. Every call is audit-logged.',
+        'explicitly requested by the user. Every call is audit-logged. ' +
+        'Note: This tool takes a direct accountId and is NOT gated by ' +
+        'PLUGGY_ITEM_IDS. Use only with IDs you trust.',
       inputSchema: {
         accountId: z
           .string()
@@ -488,7 +490,9 @@ export function registerGetAccountTool(server: McpServer): void {
         'Fetch a single Pluggy account by id. The CPF (taxNumber), full ' +
         'account number, and owner name are MASKED by default — call ' +
         '`getRawAccountDetails` if you explicitly need the unmasked values ' +
-        '(every such call is audit-logged).',
+        '(every such call is audit-logged). ' +
+        'Note: This tool takes a direct accountId and is NOT gated by ' +
+        'PLUGGY_ITEM_IDS. Use only with IDs you trust.',
       inputSchema: {
         accountId: z
           .string()
@@ -640,7 +644,9 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
         'endpoint is only available for Open Finance connectors — non-OF ' +
         'accounts will return a NOT_FOUND or FORBIDDEN error. The call ' +
         'counts against the institution-imposed rate limit shared with item ' +
-        'syncs; expect 429s under load.',
+        'syncs; expect 429s under load. ' +
+        'Note: This tool takes a direct accountId and is NOT gated by ' +
+        'PLUGGY_ITEM_IDS. Use only with IDs you trust.',
       inputSchema: {
         accountId: z
           .string()
