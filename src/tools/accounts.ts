@@ -223,13 +223,23 @@ export function registerGetAccountsTool(server: McpServer): void {
                 unarrangedOverdraftAmount: a.bankData.unarrangedOverdraftAmount,
               }
             : null,
-          // The SDK returns Date for credit-card balance dates; serialise to
-          // ISO strings so the JSON envelope is stable and validates.
+          // Explicit field-by-field copy so a future SDK addition to
+          // `CreditData` can't silently leak into the LLM response. The
+          // SDK returns Date for the balance dates; serialise to ISO
+          // strings so the JSON envelope is stable and validates.
           creditData: a.creditData
             ? {
-                ...a.creditData,
+                level: a.creditData.level,
+                brand: a.creditData.brand,
                 balanceCloseDate: toIsoIfDate(a.creditData.balanceCloseDate),
                 balanceDueDate: toIsoIfDate(a.creditData.balanceDueDate),
+                availableCreditLimit: a.creditData.availableCreditLimit,
+                balanceForeignCurrency: a.creditData.balanceForeignCurrency,
+                minimumPayment: a.creditData.minimumPayment,
+                creditLimit: a.creditData.creditLimit,
+                isLimitFlexible: a.creditData.isLimitFlexible,
+                status: a.creditData.status,
+                holderType: a.creditData.holderType,
               }
             : null,
         }));
@@ -412,18 +422,32 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
           number: a.number,
           owner: a.owner,
           taxNumber: a.taxNumber,
-          bankData: a.bankData,
+          // Explicit field copy of bankData. The raw tool returns
+          // `transferNumber` unmasked on purpose — consistent with the
+          // rest of the unmasked PII on this tool — but we still avoid
+          // a spread so a future SDK addition is reviewed deliberately.
+          bankData: a.bankData
+            ? {
+                transferNumber: a.bankData.transferNumber,
+                closingBalance: a.bankData.closingBalance,
+                automaticallyInvestedBalance: a.bankData.automaticallyInvestedBalance,
+                overdraftUsedLimit: a.bankData.overdraftUsedLimit,
+                unarrangedOverdraftAmount: a.bankData.unarrangedOverdraftAmount,
+              }
+            : null,
           creditData: a.creditData
             ? {
-                ...a.creditData,
-                balanceCloseDate:
-                  a.creditData.balanceCloseDate instanceof Date
-                    ? a.creditData.balanceCloseDate.toISOString()
-                    : a.creditData.balanceCloseDate,
-                balanceDueDate:
-                  a.creditData.balanceDueDate instanceof Date
-                    ? a.creditData.balanceDueDate.toISOString()
-                    : a.creditData.balanceDueDate,
+                level: a.creditData.level,
+                brand: a.creditData.brand,
+                balanceCloseDate: toIsoIfDate(a.creditData.balanceCloseDate),
+                balanceDueDate: toIsoIfDate(a.creditData.balanceDueDate),
+                availableCreditLimit: a.creditData.availableCreditLimit,
+                balanceForeignCurrency: a.creditData.balanceForeignCurrency,
+                minimumPayment: a.creditData.minimumPayment,
+                creditLimit: a.creditData.creditLimit,
+                isLimitFlexible: a.creditData.isLimitFlexible,
+                status: a.creditData.status,
+                holderType: a.creditData.holderType,
               }
             : null,
         };
@@ -580,9 +604,17 @@ export function registerGetAccountTool(server: McpServer): void {
             : null,
           creditData: a.creditData
             ? {
-                ...a.creditData,
+                level: a.creditData.level,
+                brand: a.creditData.brand,
                 balanceCloseDate: toIsoIfDate(a.creditData.balanceCloseDate),
                 balanceDueDate: toIsoIfDate(a.creditData.balanceDueDate),
+                availableCreditLimit: a.creditData.availableCreditLimit,
+                balanceForeignCurrency: a.creditData.balanceForeignCurrency,
+                minimumPayment: a.creditData.minimumPayment,
+                creditLimit: a.creditData.creditLimit,
+                isLimitFlexible: a.creditData.isLimitFlexible,
+                status: a.creditData.status,
+                holderType: a.creditData.holderType,
               }
             : null,
         };
