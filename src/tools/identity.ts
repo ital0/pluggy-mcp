@@ -383,7 +383,8 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
         'name, addresses, phones, emails, salary, related parties) for the ' +
         'natural person attached to a Pluggy Item. ' +
         'Disabled by default; set PLUGGY_MCP_ENABLE_IDENTITY=true to ' +
-        'enable. Every call is audit-logged with sensitive=true. ' +
+        'enable. SDK-touching calls are audit-logged with sensitive=true; ' +
+        'gate denials (toggle off, allowlist, rate-limit) are non-sensitive. ' +
         'When an allowlist (PLUGGY_ITEM_IDS) is configured, only itemIds ' +
         'in the list will be fetched; others return FORBIDDEN without ' +
         'calling the SDK. PII fields are masked when PLUGGY_MCP_REDACT is ' +
@@ -538,7 +539,8 @@ export function registerGetIdentityTool(server: McpServer): void {
         'name, addresses, phones, emails, salary, related parties) by its ' +
         'opaque identity id. ' +
         'Disabled by default; set PLUGGY_MCP_ENABLE_IDENTITY=true to ' +
-        'enable. Every call is audit-logged with sensitive=true. ' +
+        'enable. SDK-touching calls are audit-logged with sensitive=true; ' +
+        'gate denials (toggle off, rate-limit) are non-sensitive. ' +
         'Note: This tool takes a direct identityId and is NOT gated by ' +
         'PLUGGY_ITEM_IDS — we cannot map an identityId back to an itemId ' +
         'without an extra round-trip. Use only with IDs you trust. PII ' +
