@@ -263,8 +263,11 @@ function mapLoan(l: LoanLike): z.infer<typeof LoanSchema> {
   return {
     id: l.id,
     itemId: l.itemId,
-    contractNumber: l.contractNumber,
-    ipocCode: l.ipocCode,
+    // Institution-controlled identifiers — wrap so the institution can't
+    // smuggle instruction-like content into the LLM channel via fields
+    // shaped like a contract number.
+    contractNumber: wrapUntrusted(l.contractNumber),
+    ipocCode: wrapUntrusted(l.ipocCode),
     productName: wrapUntrusted(l.productName) as string,
     type: l.type,
     date: dateToIso(l.date),
@@ -287,7 +290,7 @@ function mapLoan(l: LoanLike): z.infer<typeof LoanSchema> {
     amortizationScheduledAdditionalInfo: wrapUntrusted(
       l.amortizationScheduledAdditionalInfo,
     ),
-    cnpjConsignee: l.cnpjConsignee,
+    cnpjConsignee: wrapUntrusted(l.cnpjConsignee),
     interestRates: l.interestRates
       ? l.interestRates.map((r) => ({
           taxType: r.taxType,
