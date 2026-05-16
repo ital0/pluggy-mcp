@@ -14,22 +14,28 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { MissingCredentialsError } from '../pluggy/client.js';
 
 /**
  * Stable enum the LLM can pattern-match on. The values double as
  * documentation: each one corresponds to a well-defined upstream
  * situation, never to "something else went wrong".
+ *
+ * The Zod mirror (`ErrorCodeEnum`) is the canonical declaration; the TS
+ * `ErrorCode` type is derived from it so the two cannot drift.
  */
-export type ErrorCode =
-  | 'MISSING_CREDENTIALS'
-  | 'UNAUTHORIZED'
-  | 'FORBIDDEN'
-  | 'NOT_FOUND'
-  | 'RATE_LIMITED'
-  | 'UPSTREAM_5XX'
-  | 'NETWORK'
-  | 'UNKNOWN';
+export const ErrorCodeEnum = z.enum([
+  'MISSING_CREDENTIALS',
+  'UNAUTHORIZED',
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'RATE_LIMITED',
+  'UPSTREAM_5XX',
+  'NETWORK',
+  'UNKNOWN',
+]);
+export type ErrorCode = z.infer<typeof ErrorCodeEnum>;
 
 /**
  * Envelope returned to the tool — embedded as `structuredContent` when

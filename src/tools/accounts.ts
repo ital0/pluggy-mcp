@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
-import { classifyAndReport } from '../util/errors.js';
+import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 
 // NOTE: PII fields (taxNumber/CPF, owner full name, full account number, email, phone, address)
 // are intentionally omitted from PR1's output. They will be added back in PR2 with proper masking
@@ -49,17 +49,6 @@ const AccountSchema = z.object({
   bankData: BankDataSchema.nullable(),
   creditData: CreditDataSchema.nullable(),
 });
-
-const ErrorCodeEnum = z.enum([
-  'MISSING_CREDENTIALS',
-  'UNAUTHORIZED',
-  'FORBIDDEN',
-  'NOT_FOUND',
-  'RATE_LIMITED',
-  'UPSTREAM_5XX',
-  'NETWORK',
-  'UNKNOWN',
-]);
 
 // Flat output shape — `z.discriminatedUnion` can't be passed to
 // `registerTool`'s `outputSchema` because the SDK wraps the argument in

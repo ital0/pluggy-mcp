@@ -6,7 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
-import { classifyAndReport } from '../util/errors.js';
+import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 
 // Subset of the SDK's Connector shape — we expose only stable fields that
 // are useful for an LLM picking a connector. The SDK adds new optional
@@ -46,17 +46,6 @@ const ConnectorSchema = z.object({
     })
     .describe('Real-time connector availability'),
 });
-
-const ErrorCodeEnum = z.enum([
-  'MISSING_CREDENTIALS',
-  'UNAUTHORIZED',
-  'FORBIDDEN',
-  'NOT_FOUND',
-  'RATE_LIMITED',
-  'UPSTREAM_5XX',
-  'NETWORK',
-  'UNKNOWN',
-]);
 
 // `outputSchema` is wrapped by the SDK in `z.object(...)`, so we can't pass
 // a `z.discriminatedUnion`. Instead we declare a flat shape that contains
