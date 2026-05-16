@@ -52,19 +52,31 @@ export interface SafeError {
 
 /**
  * Best-effort extraction of HTTP status / code from heterogeneous error
- * shapes (`got` HTTPError, pluggy-sdk's wrappers, plain `fetch` errors,
- * Node system errors).
+ * shapes:
+ *  - `got` HTTPError → `.response.statusCode`
+ *  - pluggy-sdk wrappers → `.statusCode`
+ *  - axios / `fetch`-style errors → `.response.status`
+ *  - modern Node error chains (`AggregateError` etc) → `.cause.statusCode`
+ *
+ * All four are checked defensively; the first match wins.
  */
 function extractStatus(err: unknown): { status: number | null; code: string | null } {
-  // got's HTTPError exposes `.response.statusCode`; some wrappers store
-  // it on `.statusCode` directly. Both are read defensively.
-  const anyErr = err as { response?: { statusCode?: number }; statusCode?: number; code?: string };
-  let status: number | null = null;
-  if (typeof anyErr?.response?.statusCode === 'number') {
-    status = anyErr.response.statusCode;
-  } else if (typeof anyErr?.statusCode === 'number') {
-    status = anyErr.statusCode;
-  }
+  const anyErr = err as {
+    response?: { statusCode?: number; status?: number };
+    statusCode?: number;
+    code?: string;
+    cause?: { statusCode?: number };
+  };
+  const status =
+    typeof anyErr?.response?.statusCode === 'number'
+      ? anyErr.response.statusCode
+      : typeof anyErr?.response?.status === 'number'
+        ? anyErr.response.status
+        : typeof anyErr?.statusCode === 'number'
+          ? anyErr.statusCode
+          : typeof anyErr?.cause?.statusCode === 'number'
+            ? anyErr.cause.statusCode
+            : null;
   const code = typeof anyErr?.code === 'string' ? anyErr.code : null;
   return { status, code };
 }
