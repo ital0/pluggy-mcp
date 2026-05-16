@@ -81,9 +81,11 @@ const AccountSchema = z.object({
 
 // Hardcoded user-facing message for in-process rate-limit denials. Same
 // security posture as `src/util/errors.ts` — never interpolate runtime
-// state (limits, retry-after) into the model-facing string.
-const RATE_LIMITED_MESSAGE =
-  'Rate limit exceeded for this MCP tool. Wait a moment before retrying.';
+// state (limits, retry-after) into the model-facing string. We use a
+// distinct `LOCAL_RATE_LIMITED` code so the LLM can tell apart a local
+// per-tool throttle from an upstream Pluggy 429.
+const LOCAL_RATE_LIMITED_MESSAGE =
+  'Local MCP rate limit exceeded for this tool. Wait briefly and retry.';
 
 // Flat output shape — `z.discriminatedUnion` can't be passed to
 // `registerTool`'s `outputSchema` because the SDK wraps the argument in
@@ -142,16 +144,16 @@ export function registerGetAccountsTool(server: McpServer): void {
         const rl = checkRateLimit('getAccounts');
         if (!rl.allowed) {
           outcome = 'error';
-          errorCode = 'RATE_LIMITED';
+          errorCode = 'LOCAL_RATE_LIMITED';
           const errorOutput = {
             ok: false as const,
-            errorCode: 'RATE_LIMITED' as const,
-            message: RATE_LIMITED_MESSAGE,
+            errorCode: 'LOCAL_RATE_LIMITED' as const,
+            message: LOCAL_RATE_LIMITED_MESSAGE,
           };
           return {
             isError: true,
             structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: RATE_LIMITED_MESSAGE }],
+            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
           };
         }
 
@@ -326,16 +328,16 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
         const rl = checkRateLimit(toolName);
         if (!rl.allowed) {
           outcome = 'error';
-          errorCode = 'RATE_LIMITED';
+          errorCode = 'LOCAL_RATE_LIMITED';
           const errorOutput = {
             ok: false as const,
-            errorCode: 'RATE_LIMITED' as const,
-            message: RATE_LIMITED_MESSAGE,
+            errorCode: 'LOCAL_RATE_LIMITED' as const,
+            message: LOCAL_RATE_LIMITED_MESSAGE,
           };
           return {
             isError: true,
             structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: RATE_LIMITED_MESSAGE }],
+            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
           };
         }
 

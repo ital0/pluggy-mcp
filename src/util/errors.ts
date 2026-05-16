@@ -31,6 +31,7 @@ export const ErrorCodeEnum = z.enum([
   'FORBIDDEN',
   'NOT_FOUND',
   'RATE_LIMITED',
+  'LOCAL_RATE_LIMITED',
   'UPSTREAM_5XX',
   'NETWORK',
   'UNKNOWN',

@@ -17,9 +17,11 @@ import {
 } from '../security/index.js';
 
 // Hardcoded — same posture as `src/util/errors.ts`; never let runtime
-// state leak into the model-facing string.
-const RATE_LIMITED_MESSAGE =
-  'Rate limit exceeded for this MCP tool. Wait a moment before retrying.';
+// state leak into the model-facing string. `LOCAL_RATE_LIMITED` is a
+// distinct code from upstream Pluggy 429s so the LLM can tell apart a
+// per-tool throttle from an upstream backoff signal.
+const LOCAL_RATE_LIMITED_MESSAGE =
+  'Local MCP rate limit exceeded for this tool. Wait briefly and retry.';
 
 // Subset of the SDK's Connector shape — we expose only stable fields that
 // are useful for an LLM picking a connector. The SDK adds new optional
@@ -111,16 +113,16 @@ export function registerListConnectorsTool(server: McpServer): void {
         const rl = checkRateLimit('listConnectors');
         if (!rl.allowed) {
           outcome = 'error';
-          errorCode = 'RATE_LIMITED';
+          errorCode = 'LOCAL_RATE_LIMITED';
           const errorOutput = {
             ok: false as const,
-            errorCode: 'RATE_LIMITED' as const,
-            message: RATE_LIMITED_MESSAGE,
+            errorCode: 'LOCAL_RATE_LIMITED' as const,
+            message: LOCAL_RATE_LIMITED_MESSAGE,
           };
           return {
             isError: true,
             structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: RATE_LIMITED_MESSAGE }],
+            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
           };
         }
 
