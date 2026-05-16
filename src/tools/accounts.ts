@@ -1,19 +1,27 @@
 /**
  * `getAccounts` tool — list the bank / credit-card accounts attached to a
  * given Pluggy Item. Read-only: only calls `GET /accounts?itemId=...`.
+ *
+ * PII handling: this tool now exposes the three PII fields the SDK
+ * surfaces (`number`, `owner`, `taxNumber`), but masked by default via
+ * the helpers in `../security/redact`. Operators who explicitly need
+ * unmasked data can either:
+ *   - opt-out per server with `PLUGGY_MCP_REDACT=false` (logs a stderr
+ *     WARN on startup), or
+ *   - call the sibling tool `getRawAccountDetails(accountId)` for a
+ *     single account; every call to that tool is audit-logged.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
-
-// NOTE: PII fields (taxNumber/CPF, owner full name, full account number, email, phone, address)
-// are intentionally omitted from PR1's output. They will be added back in PR2 with proper masking
-// (e.g. taxNumber -> ***.***.***-NN, number -> ****-NNNN, owner -> first name + initial).
-// Per pluggy-sdk types, the only PII fields actually exposed by the Account/BankData/CreditData
-// shapes are `number`, `owner`, and `taxNumber`. Email/phone/address aren't on the SDK type at
-// all, but the omit list above documents intent for PR2.
+import { loadSecurityConfig } from '../config.js';
+import {
+  redactAccountNumber,
+  redactCpf,
+  redactOwnerName,
+} from '../security/index.js';
 
 const BankDataSchema = z.object({
   transferNumber: z.string().nullable(),
@@ -46,6 +54,20 @@ const AccountSchema = z.object({
   name: z.string().describe('Account name / description'),
   marketingName: z.string().nullable(),
   currencyCode: z.string().describe('ISO 4217 currency code'),
+  // PII fields — masked by default via the redact helpers. See
+  // `getRawAccountDetails` for the unmasked variant.
+  number: z
+    .string()
+    .nullable()
+    .describe('Account number, masked to last 4 digits unless PLUGGY_MCP_REDACT=false'),
+  owner: z
+    .string()
+    .nullable()
+    .describe('Account holder, masked to first name + initial unless PLUGGY_MCP_REDACT=false'),
+  taxNumber: z
+    .string()
+    .nullable()
+    .describe('Holder CPF, masked to last 2 digits unless PLUGGY_MCP_REDACT=false'),
   bankData: BankDataSchema.nullable(),
   creditData: CreditDataSchema.nullable(),
 });
@@ -102,8 +124,11 @@ export function registerGetAccountsTool(server: McpServer): void {
         const client = getPluggyClient();
         const page = await client.fetchAccounts(itemId);
 
-        // Explicit field-by-field mapping: PII fields (number, owner, taxNumber)
-        // are intentionally NOT forwarded — they'll come back in PR2 with masking.
+        // Explicit field-by-field mapping. The three PII fields are run
+        // through the redactor unless the operator has opted out via
+        // `PLUGGY_MCP_REDACT=false` (a startup WARN line is emitted in
+        // that case, see `logSecurityConfig`).
+        const { redact } = loadSecurityConfig();
         const accounts = page.results.map((a) => ({
           id: a.id,
           itemId: a.itemId,
@@ -113,6 +138,9 @@ export function registerGetAccountsTool(server: McpServer): void {
           name: a.name,
           marketingName: a.marketingName,
           currencyCode: a.currencyCode,
+          number: redact ? redactAccountNumber(a.number) : a.number,
+          owner: redact ? redactOwnerName(a.owner) : a.owner,
+          taxNumber: redact ? redactCpf(a.taxNumber) : a.taxNumber,
           bankData: a.bankData,
           // The SDK returns Date for credit-card balance dates; serialise to
           // ISO strings so the JSON envelope is stable and validates.
