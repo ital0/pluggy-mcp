@@ -183,6 +183,41 @@ const IdentitySchema = z.object({
 // fields we touch (same approach as the other PR4 modules).
 // ---------------------------------------------------------------------------
 
+/**
+ * Mask a `Procurator` entry. Hoisted out of `mapIdentity` to avoid a
+ * nested ternary on the optional `socialName` field — explicit early
+ * returns are easier to audit than a chain of `?:` inside an object
+ * literal. The SDK guarantees `cpfNumber` and `civilName` are non-null
+ * strings on this shape, so the redactor's non-null branch keeps the
+ * output type stable when redact is on.
+ */
+function mapProcurator(
+  p: {
+    type: string;
+    cpfNumber: string;
+    civilName: string;
+    socialName?: string;
+  },
+  redact: boolean,
+): z.infer<typeof ProcuratorSchema> {
+  let socialName: string | undefined;
+  if (p.socialName === undefined) {
+    socialName = undefined;
+  } else if (redact) {
+    socialName = redactOwnerName(p.socialName) ?? undefined;
+  } else {
+    socialName = p.socialName;
+  }
+  return {
+    type: p.type,
+    cpfNumber: redact ? (redactCpf(p.cpfNumber) as string) : p.cpfNumber,
+    civilName: redact
+      ? (redactOwnerName(p.civilName) as string)
+      : p.civilName,
+    socialName,
+  };
+}
+
 type IdentityLike = {
   id: string;
   itemId: string;
@@ -306,19 +341,9 @@ function mapIdentity(
           productsServicesType: i.financialRelationships.productsServicesType.map(
             (t) => wrapUntrusted(t) ?? '',
           ),
-          procurators: i.financialRelationships.procurators.map((p) => ({
-            type: p.type,
-            cpfNumber: redact ? (redactCpf(p.cpfNumber) as string) : p.cpfNumber,
-            civilName: redact
-              ? (redactOwnerName(p.civilName) as string)
-              : p.civilName,
-            socialName:
-              p.socialName !== undefined
-                ? redact
-                  ? (redactOwnerName(p.socialName) ?? undefined)
-                  : p.socialName
-                : undefined,
-          })),
+          procurators: i.financialRelationships.procurators.map((p) =>
+            mapProcurator(p, redact),
+          ),
           // accounts is optional; when present, the four-piece bank
           // identifier (compe, branch, number, digit) is a full account
           // address — we still drop the raw `number` and emit a last-4
