@@ -342,14 +342,13 @@ export function registerGetInsightsBookTool(server: McpServer): void {
           };
         }
 
-        // Validate EVERY id against the allowlist. We deliberately do
-        // NOT short-circuit on the first denial so an operator who
-        // misconfigures one id sees a uniform FORBIDDEN regardless of
-        // ordering; the LLM cannot infer which id was the bad one from
-        // the response. (The allowlist is `null` when unset — `every`
+        // Validate EVERY id against the allowlist. The response envelope
+        // carries a uniform FORBIDDEN message regardless of which id was
+        // denied, so the LLM cannot infer which id was the bad one from
+        // the envelope. (The allowlist is `null` when unset — `every`
         // returns true and we fall through.)
-        const allDeniedCheck = itemIds.every((id) => isItemAllowed(id));
-        if (!allDeniedCheck) {
+        const allAllowed = itemIds.every((id) => isItemAllowed(id));
+        if (!allAllowed) {
           outcome = 'error';
           errorCode = 'FORBIDDEN';
           const errorOutput = {
