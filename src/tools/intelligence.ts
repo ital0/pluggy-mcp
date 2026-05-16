@@ -77,7 +77,7 @@ const GetRecurringPaymentsOutputShape = {
   ok: z.boolean(),
   itemId: z.string().optional(),
   // Pass-through payload; the upstream shape is opaque to this server.
-  // We pre-normalize free-text via `normalizeRecurringPayments` before
+  // We pre-normalize free-text via `normalizeUnknownPayload` before
   // emitting so an institution-composed string can't bypass the
   // <untrusted> wrap.
   result: z.unknown().optional(),
@@ -99,22 +99,25 @@ const MAX_NORMALIZE_DEPTH = 10;
 const MAX_DEPTH_SENTINEL = '[truncated: max depth]';
 
 /**
- * Walk the recurring-payments response and wrap every string leaf in
- * `<untrusted>`. The upstream shape is documented loosely and may change;
- * a recursive wrap is the safest posture short of pinning a strict
- * schema. We deliberately do NOT mutate the input — JSON.parse(stringify)
- * gives us a deep clone that's safe to mutate.
+ * Walk a loosely-typed enrichment/insights response and wrap every string
+ * leaf in `<untrusted>`. The upstream shapes are documented loosely and
+ * may change; a recursive wrap is the safest posture short of pinning a
+ * strict schema. We deliberately do NOT mutate the input.
  *
- * NUMBERS pass through unchanged: KPI values are the point of the tool.
- * BOOLEANS / NULLS pass through. Object keys are NOT wrapped (they are
- * server-controlled by Pluggy, not adversarial).
+ * NUMBERS / BOOLEANS / NULLS pass through unchanged — KPI values are the
+ * point of the tool. Object keys are NOT wrapped (they are server-
+ * controlled by Pluggy, not adversarial).
+ *
+ * Shared by `getRecurringPayments` and `getInsightsBook`: both surfaces
+ * have identical normalization needs today. If Pluggy publishes a tighter
+ * schema for one of them, fork into a dedicated normalizer at that point.
  */
-function normalizeRecurringPayments(value: unknown, depth: number = 0): unknown {
+function normalizeUnknownPayload(value: unknown, depth: number = 0): unknown {
   if (depth >= MAX_NORMALIZE_DEPTH) return wrapUntrusted(MAX_DEPTH_SENTINEL);
   if (value === null || value === undefined) return value;
   if (typeof value === 'string') return wrapUntrusted(value);
   if (Array.isArray(value)) {
-    return value.map((v) => normalizeRecurringPayments(v, depth + 1));
+    return value.map((v) => normalizeUnknownPayload(v, depth + 1));
   }
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>;
@@ -126,7 +129,7 @@ function normalizeRecurringPayments(value: unknown, depth: number = 0): unknown 
     const out: Record<string, unknown> = Object.create(null);
     for (const [k, v] of Object.entries(obj)) {
       if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
-      out[k] = normalizeRecurringPayments(v, depth + 1);
+      out[k] = normalizeUnknownPayload(v, depth + 1);
     }
     return out;
   }
@@ -214,7 +217,7 @@ export function registerGetRecurringPaymentsTool(server: McpServer): void {
           'POST',
           { itemId },
         );
-        const result = normalizeRecurringPayments(raw);
+        const result = normalizeUnknownPayload(raw);
 
         const output = { ok: true as const, itemId, result };
         return {
@@ -277,33 +280,6 @@ const GetInsightsBookOutputShape = {
   requestId: z.string().optional(),
   message: z.string().optional(),
 };
-
-/**
- * Recursive `<untrusted>` wrap for the insights book payload, same idea
- * as the recurring-payments normalizer but kept as a separate function
- * so the two surfaces can diverge if Pluggy publishes a tighter schema
- * for one of them.
- */
-function normalizeInsightsBook(value: unknown, depth: number = 0): unknown {
-  if (depth >= MAX_NORMALIZE_DEPTH) return wrapUntrusted(MAX_DEPTH_SENTINEL);
-  if (value === null || value === undefined) return value;
-  if (typeof value === 'string') return wrapUntrusted(value);
-  if (Array.isArray(value)) {
-    return value.map((v) => normalizeInsightsBook(v, depth + 1));
-  }
-  if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>;
-    // Same posture as `normalizeRecurringPayments`: prototype-free output
-    // object and explicit skip for `__proto__` / `constructor` / `prototype`.
-    const out: Record<string, unknown> = Object.create(null);
-    for (const [k, v] of Object.entries(obj)) {
-      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
-      out[k] = normalizeInsightsBook(v, depth + 1);
-    }
-    return out;
-  }
-  return value;
-}
 
 /**
  * Hardcoded ceiling on the number of itemIds accepted per call. The
@@ -434,7 +410,7 @@ export function registerGetInsightsBookTool(server: McpServer): void {
 
         sensitive = true;
         const raw = await pluggyRawFetch(url, 'POST');
-        const result = normalizeInsightsBook(raw);
+        const result = normalizeUnknownPayload(raw);
 
         const output = { ok: true as const, itemIds, result };
         return {
