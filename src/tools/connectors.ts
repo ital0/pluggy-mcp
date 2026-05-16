@@ -148,8 +148,8 @@ export function registerListConnectorsTool(server: McpServer): void {
             {
               type: 'text' as const,
               text: truncated
-                ? `Found ${output.connectors.length} of ${total} Pluggy connector(s) (truncated; pagination ships in a later PR).`
-                : `Found ${output.connectors.length} Pluggy connector(s).`,
+                ? `Found ${connectors.length} of ${total} Pluggy connector(s) (truncated; pagination ships in a later PR).`
+                : `Found ${connectors.length} Pluggy connector(s).`,
             },
           ],
         };

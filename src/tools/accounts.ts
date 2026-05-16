@@ -155,8 +155,8 @@ export function registerGetAccountsTool(server: McpServer): void {
             {
               type: 'text' as const,
               text: truncated
-                ? `Found ${output.accounts.length} of ${total} account(s) for item ${itemId} (truncated; pagination ships in a later PR).`
-                : `Found ${output.accounts.length} account(s) for item ${itemId}.`,
+                ? `Found ${accounts.length} of ${total} account(s) for item ${itemId} (truncated; pagination ships in a later PR).`
+                : `Found ${accounts.length} account(s) for item ${itemId}.`,
             },
           ],
         };
