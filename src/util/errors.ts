@@ -110,6 +110,15 @@ export function classifyAndReport(
     errorCode = 'UNAUTHORIZED';
     message =
       'Pluggy rejected the credentials (401). Rotate PLUGGY_CLIENT_ID/SECRET.';
+  } else if (status === 400) {
+    // Pluggy's /auth handshake returns 400 — not 401 — for malformed or
+    // invalid credentials, and the SDK only surfaces a raw HTTPError for
+    // that pre-flight call (data calls have their non-2xx bodies caught
+    // and rejected as plain objects instead). Treating a bare 400 from a
+    // tool call as UNAUTHORIZED gives the model the right next step.
+    errorCode = 'UNAUTHORIZED';
+    message =
+      'Pluggy rejected the credentials (400 on /auth). Verify PLUGGY_CLIENT_ID/SECRET.';
   } else if (status === 403) {
     errorCode = 'FORBIDDEN';
     message =
