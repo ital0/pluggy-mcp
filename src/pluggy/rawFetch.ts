@@ -26,27 +26,27 @@ import { logEvent } from '../util/log.js';
 /**
  * Minimal shape we throw on non-2xx responses. Mirrors the fields that
  * `../util/errors.ts:extractStatus` probes (`response.statusCode`,
- * `statusCode`, `body.statusCode`) so the existing classifier maps a raw
- * fetch failure to the same `errorCode` an SDK call would have produced.
+ * `statusCode`) so the existing classifier maps a raw fetch failure to
+ * the same `errorCode` an SDK call would have produced.
  *
- * We deliberately do NOT carry the response body into `message` — the
- * upstream JSON could contain customer data and would land in the LLM
- * context via the classifier. The structured `body` field is available
- * to the operator at debug-log time only.
+ * We deliberately do NOT carry the response body at all — upstream JSON
+ * on a 4xx may contain partial PII or echo back request fields, and
+ * keeping it on the error object risks accidental serialization (e.g.
+ * `JSON.stringify(err)`, debugger inspection, or a future logger that
+ * spreads error properties). The hardcoded message is server-controlled
+ * and safe to surface.
  */
 export class PluggyRawFetchError extends Error {
   readonly statusCode: number;
-  readonly response: { statusCode: number; body?: unknown };
-  readonly body?: unknown;
-  constructor(statusCode: number, body?: unknown) {
+  readonly response: { statusCode: number };
+  constructor(statusCode: number) {
     super(`Pluggy raw fetch failed with HTTP ${statusCode}`);
     this.name = 'PluggyRawFetchError';
     this.statusCode = statusCode;
-    this.body = body;
     // Duplicate the status under `response` so `extractStatus()` finds it
     // through any of its probe paths. Cheap and keeps the existing error
     // classifier oblivious to the source (SDK vs raw fetch).
-    this.response = { statusCode, body };
+    this.response = { statusCode };
   }
 }
 
@@ -90,13 +90,12 @@ export async function pluggyRawFetch(
 
   const res = await fetch(url, init);
 
-  // Read body once. Some premium endpoints return text on 403 (e.g.
-  // "feature not enabled"); on the error path we still wrap the raw text
-  // so the operator log has something to inspect. On the 2xx path,
-  // non-JSON is treated as a hard failure — these endpoints are
-  // documented as JSON and a text body in a "success" response usually
-  // indicates an upstream proxy or auth interstitial we should NOT
-  // surface as data.
+  // Read body once. On the 2xx path, non-JSON is treated as a hard
+  // failure — these endpoints are documented as JSON and a text body in
+  // a "success" response usually indicates an upstream proxy or auth
+  // interstitial we should NOT surface as data. On the error path we
+  // also drop the body: the upstream JSON may contain partial PII or
+  // echo back request fields, and the classifier only needs the status.
   let parsed: unknown = undefined;
   let jsonOk = true;
   const text = await res.text();
@@ -105,22 +104,30 @@ export async function pluggyRawFetch(
       parsed = JSON.parse(text);
     } catch {
       jsonOk = false;
-      // Preserve the raw text — operator-visible at debug time only;
-      // tool callers never surface this in the LLM channel.
-      parsed = { rawBody: text };
     }
   }
 
   if (!res.ok) {
-    throw new PluggyRawFetchError(res.status, parsed);
+    throw new PluggyRawFetchError(res.status);
   }
   if (!jsonOk) {
+    // Log the endpoint host + path (no query string) instead of the full
+    // URL — insights book carries itemIds in the query and we never want
+    // raw ids on stderr. URL parsing is best-effort; on failure we emit
+    // a server-controlled sentinel rather than the raw input.
+    let endpoint = 'unknown';
+    try {
+      const u = new URL(url);
+      endpoint = `${u.host}${u.pathname}`;
+    } catch {
+      endpoint = 'unparseable';
+    }
     logEvent('raw_fetch_non_json_body', {
-      url,
+      endpoint,
       status: res.status,
       len: text.length,
     });
-    throw new PluggyRawFetchError(res.status, parsed);
+    throw new PluggyRawFetchError(res.status);
   }
   return parsed;
 }
