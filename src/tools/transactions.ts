@@ -138,7 +138,7 @@ const TransactionSchema = z.object({
   currencyCode: z.string(),
   category: z.string().nullable(),
   status: z.enum(['PENDING', 'POSTED']).optional(),
-  providerCode: z.string().optional(),
+  providerCode: z.string().nullable().optional(),
   paymentData: PaymentDataSchema.optional(),
   creditCardMetadata: CreditCardMetadataSchema.nullable(),
   merchant: MerchantSchema.optional(),
@@ -223,7 +223,7 @@ type TransactionLike = {
   currencyCode: string;
   category: string | null;
   status?: 'PENDING' | 'POSTED';
-  providerCode?: string;
+  providerCode?: string | null;
   paymentData?: {
     payer?: {
       documentNumber?: { value?: string; type?: 'CPF' | 'CNPJ' };
