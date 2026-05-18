@@ -13,6 +13,7 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -49,6 +50,10 @@ const GetCategoryOutputShape = {
   requestId: z.string().optional(),
   message: z.string().optional(),
 };
+
+// Validator mirrors — see `transactions.ts` for rationale.
+const ListCategoriesOutputSchema = z.object(ListCategoriesOutputShape);
+const GetCategoryOutputSchema = z.object(GetCategoryOutputShape);
 
 export function registerListCategoriesTool(server: McpServer): void {
   const toolName = 'listCategories';
@@ -125,6 +130,7 @@ export function registerListCategoriesTool(server: McpServer): void {
           truncated,
           categories,
         };
+        ensureOutputShape(ListCategoriesOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -229,6 +235,7 @@ export function registerGetCategoryTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, category };
+        ensureOutputShape(GetCategoryOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [

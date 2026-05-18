@@ -133,8 +133,9 @@ const GetBillOutputShape = {
   message: z.string().optional(),
 };
 
-// Validator mirror — see transactions.ts for rationale.
+// Validator mirrors — see transactions.ts for rationale.
 const ListBillsOutputSchema = z.object(ListBillsOutputShape);
+const GetBillOutputSchema = z.object(GetBillOutputShape);
 
 export function registerListBillsTool(server: McpServer): void {
   const toolName = 'listBills';
@@ -322,6 +323,7 @@ export function registerGetBillTool(server: McpServer): void {
         const bill = mapBill(b as unknown as BillLike);
 
         const output = { ok: true as const, bill };
+        ensureOutputShape(GetBillOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [

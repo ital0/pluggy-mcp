@@ -67,8 +67,9 @@ const GetConsentOutputShape = {
   message: z.string().optional(),
 };
 
-// Validator mirror — see transactions.ts for rationale.
+// Validator mirrors — see transactions.ts for rationale.
 const ListConsentsOutputSchema = z.object(ListConsentsOutputShape);
+const GetConsentOutputSchema = z.object(GetConsentOutputShape);
 
 export function registerListConsentsTool(server: McpServer): void {
   const toolName = 'listConsents';
@@ -309,6 +310,7 @@ export function registerGetConsentTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, consent };
+        ensureOutputShape(GetConsentOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [

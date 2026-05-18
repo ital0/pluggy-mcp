@@ -177,6 +177,7 @@ const GetTransactionOutputShape = {
 // own outputSchema check, which would otherwise reject the envelope after
 // the handler exited (leaving the audit line stuck at outcome=success).
 const ListTransactionsOutputSchema = z.object(ListTransactionsOutputShape);
+const GetTransactionOutputSchema = z.object(GetTransactionOutputShape);
 
 /**
  * Mask a payer/receiver participant. Document number is CPF (11 digits)
@@ -647,6 +648,7 @@ export function registerGetTransactionTool(server: McpServer): void {
         const transaction = mapTransaction(t as unknown as TransactionLike, sec.redact);
 
         const output = { ok: true as const, transaction };
+        ensureOutputShape(GetTransactionOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
