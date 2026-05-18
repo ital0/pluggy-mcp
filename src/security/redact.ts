@@ -5,6 +5,7 @@
  * calls them. They are foundational for upcoming tools that will consume PII
  * fields:
  *   - redactCpf — used today by getAccounts; transactions, identity will reuse
+ *   - redactCnpj — for employer CNPJ (identity.qualifications.companyCnpj)
  *   - redactAccountNumber — used today by getAccounts; bills will reuse
  *   - redactCardNumber — for bills (credit card faturas), credit card transactions
  *   - redactOwnerName — used today by getAccounts; identity will reuse
@@ -81,6 +82,34 @@ export function redactCpf(cpf?: string | null): string | null {
   }
   const last2 = digits.slice(-2);
   return `***.***.***-${last2}`;
+}
+
+/**
+ * Brazilian CNPJ: 14 digits, conventionally rendered `NN.NNN.NNN/NNNN-NN`.
+ * We keep the last 2 digits (the check-digits) so the model can still
+ * disambiguate companies visually without exposing the identifier — same
+ * posture as `redactCpf`.
+ *
+ * Always runs unconditionally. A CNPJ must be exactly 14 digits; anything
+ * else (including the masked form, which strips to only 2 digits) is
+ * fully masked. This makes the function idempotent on its own output:
+ * re-running over the masked form strips the punctuation and stars, sees
+ * a 2-digit string, and returns the fully-masked form.
+ */
+export function redactCnpj(cnpj?: string | null): string | null {
+  if (cnpj === null || cnpj === undefined) return null;
+  if (cnpj === '') return cnpj;
+
+  // NFKC normalize: collapse Unicode digits (fullwidth, Arabic-Indic) to ASCII before stripping.
+  const digits = cnpj.normalize('NFKC').replace(/\D/g, '');
+  if (digits.length !== 14) {
+    // Not a valid-length CNPJ (or an already-masked value with most digits
+    // stripped) — fully mask. Keeps the function idempotent on its own
+    // output shape without trusting input that merely looks masked.
+    return '**.***.***/****-**';
+  }
+  const last2 = digits.slice(-2);
+  return `**.***.***/****-${last2}`;
 }
 
 /**

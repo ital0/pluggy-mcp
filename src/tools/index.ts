@@ -29,6 +29,21 @@ import {
   registerListCategoriesTool,
   registerGetCategoryTool,
 } from './categories.js';
+import { registerListBillsTool, registerGetBillTool } from './bills.js';
+import {
+  registerListInvestmentsTool,
+  registerGetInvestmentTool,
+  registerListInvestmentTransactionsTool,
+} from './investments.js';
+import { registerListLoansTool, registerGetLoanTool } from './loans.js';
+import {
+  registerGetIdentityByItemTool,
+  registerGetIdentityTool,
+} from './identity.js';
+import {
+  registerGetRecurringPaymentsTool,
+  registerGetInsightsBookTool,
+} from './intelligence.js';
 
 export function registerAllTools(server: McpServer): void {
   // Connectors (no-PII reference data).
@@ -50,4 +65,22 @@ export function registerAllTools(server: McpServer): void {
   // Categories (global taxonomy; no PII).
   registerListCategoriesTool(server);
   registerGetCategoryTool(server);
+  // Bills (credit-card faturas; no PII, free-text fee info wrapped).
+  registerListBillsTool(server);
+  registerGetBillTool(server);
+  // Investments (owner masked; asset/issuer/institution text wrapped).
+  registerListInvestmentsTool(server);
+  registerGetInvestmentTool(server);
+  registerListInvestmentTransactionsTool(server);
+  // Loans (no PII; deeply nested free-text wrapped throughout).
+  registerListLoansTool(server);
+  registerGetLoanTool(server);
+  // Identity (HIGHEST PII; opt-in via PLUGGY_MCP_ENABLE_IDENTITY,
+  // every call audit-logged with sensitive=true).
+  registerGetIdentityByItemTool(server);
+  registerGetIdentityTool(server);
+  // Intelligence (premium enrichment + insights; raw fetch with
+  // <untrusted> wrap on all free-text leaves).
+  registerGetRecurringPaymentsTool(server);
+  registerGetInsightsBookTool(server);
 }

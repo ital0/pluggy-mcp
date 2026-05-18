@@ -26,6 +26,16 @@ export type SecurityConfig = {
   redact: boolean;
   audit: boolean;
   rateLimit: boolean;
+  /**
+   * Opt-IN toggle for identity tools (`getIdentityByItem`, `getIdentity`).
+   * Default `false` — opposite posture from `redact` / `audit` / `rateLimit`
+   * because identity is the highest-PII surface in the Pluggy API (CPF,
+   * full name, addresses, phones, emails, salary, related parties). The
+   * operator must explicitly set `PLUGGY_MCP_ENABLE_IDENTITY=true` to
+   * unlock the tools; until they do, the registered tools refuse to call
+   * the SDK and return a `FORBIDDEN` envelope.
+   */
+  enableIdentity: boolean;
 };
 
 /**
@@ -107,6 +117,11 @@ export function loadSecurityConfig(): SecurityConfig {
     redact: process.env.PLUGGY_MCP_REDACT !== 'false',
     audit: process.env.PLUGGY_MCP_AUDIT !== 'false',
     rateLimit: process.env.PLUGGY_MCP_RATELIMIT !== 'false',
+    // Opt-IN: only the literal string "true" enables identity tools.
+    // Any other value (unset, "1", "yes", "TRUE", typos) is treated as
+    // disabled — fail-closed because the data unlocked here is the
+    // highest-PII surface in the API.
+    enableIdentity: process.env.PLUGGY_MCP_ENABLE_IDENTITY === 'true',
   };
   return cachedSecurity;
 }
@@ -238,6 +253,7 @@ export function logSecurityConfig(): void {
     redact: cfg.redact,
     audit: cfg.audit,
     rateLimit: cfg.rateLimit,
+    enableIdentity: cfg.enableIdentity,
     // Surface only the *count* of allowed items — the actual UUIDs are
     // operator-controlled identifiers and shouldn't show up unbidden in
     // logs. `null` documents "no restriction" explicitly.
@@ -256,6 +272,16 @@ export function logSecurityConfig(): void {
     console.error(
       '[pluggy-mcp] WARN: audit logging DISABLED — non-sensitive tool calls will not be recorded. ' +
         'Set PLUGGY_MCP_AUDIT=true to enable. (Sensitive-event audit is unbypassable.)',
+    );
+  }
+  if (cfg.enableIdentity) {
+    // Identity tools are opt-IN because they unlock CPF, full name,
+    // addresses, phones, emails, salary, patrimony, and related-party
+    // data. Emit a startup WARN so an operator who set the var
+    // accidentally sees it surfaced loudly. Sensitive-event audit lines
+    // fire on every call regardless of the audit toggle.
+    console.error(
+      '[pluggy-mcp] WARN: PLUGGY_MCP_ENABLE_IDENTITY=true — getIdentityByItem/getIdentity will return CPF, full name, addresses, phones, emails, salary, and related-party data. Every call is audit-logged with sensitive=true.',
     );
   }
   if (allowlist !== null && allowlist.size === 0) {
