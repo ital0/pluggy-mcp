@@ -137,8 +137,38 @@ interface ToolSuccessResponse<T extends { ok: true }> {
 export function buildSuccessResponse<T extends { ok: true }>(
   structured: T,
 ): ToolSuccessResponse<T> {
+  // Runtime guard — the `T extends { ok: true }` constraint only fires at
+  // compile time; a caller could bypass it via `as any` (or via a refactor
+  // that loses the literal type) and end up returning a failure payload
+  // through the success channel WITHOUT `isError: true`. Banking MCP:
+  // belt-and-suspenders, fail loudly so the bug surfaces in tests instead
+  // of silently presenting an error payload as success to the LLM.
+  if ((structured as { ok: unknown }).ok !== true) {
+    throw new Error('buildSuccessResponse called with non-success envelope');
+  }
+
+  // JSON.stringify can throw on BigInt values, circular references, or a
+  // `toJSON` that itself throws. None of those shapes are reachable in
+  // the current codebase, but an SDK upgrade could introduce them. Tag
+  // the rethrow with `errorCode: 'INTERNAL'` so the outer
+  // `classifyAndReport` branch (see `errors.ts`) bucketts this as
+  // INTERNAL rather than the much-less-actionable UNKNOWN — operators
+  // grep logs by errorCode.
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(structured);
+  } catch (err) {
+    const wrapped = new Error(
+      `buildSuccessResponse failed to serialize structured payload: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    (wrapped as Error & { errorCode?: string }).errorCode = 'INTERNAL';
+    throw wrapped;
+  }
+
   return {
     structuredContent: structured,
-    content: [{ type: 'text', text: JSON.stringify(structured) }],
+    content: [{ type: 'text', text: serialized }],
   };
 }
