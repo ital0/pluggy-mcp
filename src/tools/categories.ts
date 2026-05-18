@@ -31,9 +31,9 @@ import {
   audit,
   checkRateLimit,
   hashArgsSafely,
+  wrapUntrusted,
   LOCAL_RATE_LIMITED_MESSAGE,
 } from '../security/index.js';
-import { wrapUntrusted } from '../security/untrusted.js';
 
 const CategorySchema = z.object({
   id: z.string().describe('Pluggy category id'),
