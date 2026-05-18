@@ -46,7 +46,10 @@ MCP client (Cursor / Claude Desktop / Codex CLI)
 
 ## Quick start
 
-### Option A: run from npm (when published)
+### Option A: run from npm
+
+> Note: the `pluggy-mcp` npm package is not yet published. Use Option B
+> (local clone) until the first release lands.
 
 ```bash
 npx -y pluggy-mcp
@@ -91,7 +94,7 @@ You will normally not invoke the server directly — your MCP client
 | `PLUGGY_ITEM_IDS` | no | unset | Comma-separated allowlist of Pluggy Item UUIDs. | Unset = no restriction. Present-but-empty = **deny all** (fail-closed). See below. |
 | `PLUGGY_MCP_ENABLE_IDENTITY` | no | `false` | Opt-in switch for `getIdentityByItem` and `getIdentity`. Only the literal string `"true"` enables them. | Identity is the highest-PII surface. Every enabled call emits `sensitive: true` regardless of the audit toggle. |
 
-A working `.env.example` is included in the repo.
+A working `.env.example` is included in the [GitHub repository](https://github.com/pluggyai/pluggy-mcp/blob/main/.env.example) (not shipped via npm).
 
 ### Items allowlist (`PLUGGY_ITEM_IDS`)
 
@@ -293,7 +296,7 @@ These tools are **disabled by default**. Set
 
 ### Intelligence (premium)
 
-Premium Pluggy feature — calls return `403` if your account plan does
+Premium Pluggy feature — calls may return `403` if your account plan does
 not include enrichment / insights.
 
 | Tool | Input | Returns | PII | Notes |
