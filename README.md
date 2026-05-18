@@ -158,14 +158,15 @@ restart.
 ### Cursor
 
 Cursor reads MCP server config from `~/.cursor/mcp.json` (or per-project
-under `.cursor/mcp.json`). Add a `pluggy` entry:
+under `.cursor/mcp.json`). Add a `pluggy` entry pointing at your local
+clone (until the npm package is published, `npx -y pluggy-mcp` returns 404):
 
 ```json
 {
   "mcpServers": {
     "pluggy": {
-      "command": "npx",
-      "args": ["-y", "pluggy-mcp"],
+      "command": "node",
+      "args": ["/path/to/your/clone/of/pluggy-mcp/dist/index.js"],
       "env": {
         "PLUGGY_CLIENT_ID": "your-client-id",
         "PLUGGY_CLIENT_SECRET": "your-client-secret"
@@ -175,14 +176,14 @@ under `.cursor/mcp.json`). Add a `pluggy` entry:
 }
 ```
 
-To run against a local clone instead:
+Once the npm package is published you can shorten this to:
 
 ```json
 {
   "mcpServers": {
     "pluggy": {
-      "command": "node",
-      "args": ["/path/to/your/clone/of/pluggy-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "pluggy-mcp"],
       "env": {
         "PLUGGY_CLIENT_ID": "your-client-id",
         "PLUGGY_CLIENT_SECRET": "your-client-secret",
@@ -205,6 +206,26 @@ Claude Desktop reads from a per-OS config file:
 | macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
 | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Linux | `~/.config/Claude/claude_desktop_config.json` |
+
+Point the config at your local clone (until the npm package is published,
+`npx -y pluggy-mcp` returns 404):
+
+```json
+{
+  "mcpServers": {
+    "pluggy": {
+      "command": "node",
+      "args": ["/path/to/your/clone/of/pluggy-mcp/dist/index.js"],
+      "env": {
+        "PLUGGY_CLIENT_ID": "your-client-id",
+        "PLUGGY_CLIENT_SECRET": "your-client-secret"
+      }
+    }
+  }
+}
+```
+
+Once the npm package is published you can shorten this to:
 
 ```json
 {
