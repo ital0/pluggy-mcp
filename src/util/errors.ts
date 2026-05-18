@@ -65,10 +65,21 @@ export interface SafeError {
 function looksLikePluggyErrorBody(
   b: unknown,
 ): b is { code: number; message: string; codeDescription?: unknown; errorId?: unknown } {
-  if (!b || typeof b !== 'object') return false;
+  // Array guard: arrays are `typeof 'object'` but never Pluggy bodies. The
+  // numeric `code` probe below would otherwise accept e.g. `[401]` after a
+  // future SDK quirk via array-index property access.
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return false;
   const obj = b as Record<string, unknown>;
   return (
     typeof obj.code === 'number' &&
+    // NaN and Infinity are `typeof 'number'` — explicitly exclude them, plus
+    // anything outside the valid HTTP status range. Without this gate a
+    // future upstream returning `{ code: NaN, message: '...', errorId: '...' }`
+    // would slip through and then fail STATUS_MAP lookup as `undefined`,
+    // landing on UNKNOWN instead of the more specific NETWORK/INTERNAL paths.
+    Number.isFinite(obj.code) &&
+    obj.code >= 100 &&
+    obj.code <= 599 &&
     typeof obj.message === 'string' &&
     ('codeDescription' in obj || 'errorId' in obj)
   );
