@@ -114,7 +114,7 @@ const InvestmentTransactionSchema = z.object({
   type: z.string().nullable(),
   // Free text — wrapped.
   description: z.string().nullable(),
-  investmentId: z.string().nullable(),
+  investmentId: z.string().nullable().optional(),
   quantity: z.number().nullable(),
   value: z.number().nullable(),
   amount: z.number().nullable(),
@@ -177,7 +177,7 @@ type InvestmentTransactionLike = {
   id: string;
   type: string | null;
   description: string | null;
-  investmentId: string | null;
+  investmentId?: string | null;
   quantity: number | null;
   value: number | null;
   amount: number | null;
