@@ -33,8 +33,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { pluggyRawFetch } from '../pluggy/rawFetch.js';
-import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
-import { ensureOutputShape, ensureErrorEnvelope } from '../util/outputShape.js';
+import { ErrorCodeEnum } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
+import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import {
   audit,
@@ -186,31 +187,13 @@ export function registerGetRecurringPaymentsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         if (!isItemAllowed(itemId)) {
           outcome = 'error';
           errorCode = 'FORBIDDEN';
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'FORBIDDEN' as const,
-            message: ITEM_NOT_ALLOWED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: ITEM_NOT_ALLOWED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('FORBIDDEN', ITEM_NOT_ALLOWED_MESSAGE);
         }
 
         sensitive = true;
@@ -239,28 +222,14 @@ export function registerGetRecurringPaymentsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'enrichmentRecurringPayments',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
-        const errorOutput = ensureErrorEnvelope(
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'enrichmentRecurringPayments' },
           GetRecurringPaymentsOutputSchema,
-          {
-            ok: false as const,
-            errorCode: safe.errorCode,
-            requestId: safe.requestId,
-            message: safe.message,
-          },
-          { tool: toolName },
         );
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -356,16 +325,7 @@ export function registerGetInsightsBookTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         // Defense-in-depth runtime check — zod `.min(1)` should already
@@ -374,18 +334,7 @@ export function registerGetInsightsBookTool(server: McpServer): void {
         if (itemIds.length === 0) {
           outcome = 'error';
           errorCode = 'UNKNOWN';
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'UNKNOWN' as const,
-            message: INSIGHTS_NO_ITEM_IDS_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [
-              { type: 'text' as const, text: INSIGHTS_NO_ITEM_IDS_MESSAGE },
-            ],
-          };
+          return buildLiteralErrorResponse('UNKNOWN', INSIGHTS_NO_ITEM_IDS_MESSAGE);
         }
 
         // Validate EVERY id against the allowlist. The response envelope
@@ -397,18 +346,7 @@ export function registerGetInsightsBookTool(server: McpServer): void {
         if (!allAllowed) {
           outcome = 'error';
           errorCode = 'FORBIDDEN';
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'FORBIDDEN' as const,
-            message: INSIGHTS_ITEM_NOT_ALLOWED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [
-              { type: 'text' as const, text: INSIGHTS_ITEM_NOT_ALLOWED_MESSAGE },
-            ],
-          };
+          return buildLiteralErrorResponse('FORBIDDEN', INSIGHTS_ITEM_NOT_ALLOWED_MESSAGE);
         }
 
         // Pluggy's insights book takes itemIds as a repeated `itemIds`
@@ -436,28 +374,14 @@ export function registerGetInsightsBookTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'insightsBook',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
-        const errorOutput = ensureErrorEnvelope(
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'insightsBook' },
           GetInsightsBookOutputSchema,
-          {
-            ok: false as const,
-            errorCode: safe.errorCode,
-            requestId: safe.requestId,
-            message: safe.message,
-          },
-          { tool: toolName },
         );
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
