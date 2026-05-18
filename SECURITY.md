@@ -53,6 +53,16 @@ or in user-shared screenshots.
   for raw values is **explicit, audited, and separated** from the
   default-masked `getAccount`.
 
+**Note on the text channel mirror:** per the MCP spec (2025-06-18,
+"Structured Content"), tool responses now mirror `structuredContent` as
+a JSON-serialized `TextContent` block so clients that only surface
+`content[].text` (notably claude.ai today) can drive multi-step
+workflows. Redacted values (CPF prefix-only, names truncated to
+`First L.`, account `****1234`) flow through **both** channels — the
+masking level is unchanged, but operators reasoning about "what reaches
+cloud-stored transcripts" should know the LLM-facing text channel now
+carries the same masked payload the structured channel already did.
+
 ### 3. Compromised LLM session issuing rogue tool calls
 
 A jailbroken LLM, a malicious prompt, or a confused agent loop can issue
