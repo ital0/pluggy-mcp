@@ -225,8 +225,8 @@ raw available behind explicit opt-in).
 
 | Tool | Input | Returns | PII | Notes |
 | --- | --- | --- | --- | --- |
-| `listConnectors` | — | All available institutions (banks, brokers, etc.) and their products / health. | none | Free-text names wrapped in `<untrusted>`. |
-| `getConnector` | `connectorId` (number) | Single connector by id. | none | Same wrapping. |
+| `listConnectors` | — | All available institutions (banks, brokers, etc.) and their products / health. | low | Free-text names wrapped in `<untrusted>`. |
+| `getConnector` | `connectorId` (number) | Single connector by id. | low | Same wrapping. |
 
 ### Items and consents
 
