@@ -238,6 +238,7 @@ PLUGGY_CLIENT_ID = "your-client-id"
 PLUGGY_CLIENT_SECRET = "your-client-secret"
 # Optional:
 # PLUGGY_ITEM_IDS = "YOUR_ITEM_ID_1,YOUR_ITEM_ID_2"
+# WARNING: unlocks CPF, salary, addresses, related parties — read SECURITY.md first.
 # PLUGGY_MCP_ENABLE_IDENTITY = "true"
 ```
 
