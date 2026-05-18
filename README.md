@@ -92,7 +92,7 @@ You will normally not invoke the server directly — your MCP client
 | `PLUGGY_MCP_RATELIMIT` | no | `true` | Enforce in-memory per-tool rate limits. | Setting `false` removes the only local guard against agent loops blowing your Pluggy quota. |
 | `PLUGGY_MCP_RATELIMIT_PER_MIN` | no | `30` | Per-tool budget over a 60-second sliding window. | Non-positive or non-numeric falls back to the default and logs `config_invalid`. |
 | `PLUGGY_MCP_RATELIMIT_PER_DAY` | no | `200` | Per-tool budget over a 24-hour sliding window. | Same fallback behavior as above. |
-| `PLUGGY_MCP_DEBUG` | no | `0` | When `1`, also dumps raw upstream error bodies and stacks to stderr. | Error bodies can contain customer data — keep off in production. |
+| `PLUGGY_MCP_DEBUG` | no | `0` | Only the literal string `"1"` enables it (every other value — including `"true"`, `"yes"`, `"on"` — disables, inconsistent with the other toggles which accept everything-not-`"false"`). When enabled, dumps raw upstream error bodies and stacks to stderr. | Raw error bodies often include PII (CPF, account numbers, owner names) returned by the upstream institution. Keep off outside of active debugging. |
 | `PLUGGY_ITEM_IDS` | no | unset | Comma-separated allowlist of Pluggy Item UUIDs. | Unset = no restriction. Present-but-empty = **deny all** (fail-closed). See below. |
 | `PLUGGY_MCP_ENABLE_IDENTITY` | no | `false` | Opt-in switch for `getIdentityByItem` and `getIdentity`. Only the literal string `"true"` enables them. | Identity is the highest-PII surface. Every enabled call emits `sensitive: true` regardless of the audit toggle. |
 
