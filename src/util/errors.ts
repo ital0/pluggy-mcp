@@ -77,7 +77,7 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
       body?: { statusCode?: number; code?: string | number };
     };
     statusCode?: number;
-    code?: string;
+    code?: string | number;
     body?: { statusCode?: number; code?: string | number };
     cause?: { statusCode?: number; code?: string };
   };
@@ -89,9 +89,12 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
       anyErr?.statusCode,
       anyErr?.body?.statusCode,
       anyErr?.cause?.statusCode,
-      // Pluggy data-API rejects with `body = { code: 404, codeDescription, ... }`
-      // where `code` is the NUMERIC HTTP status (not a string identifier).
-      // Probe these in the number chain so 404/403/429 classify correctly.
+      // Pluggy data-API rejects with the parsed body as the err value
+      // itself: `{ message, code: 404, codeDescription, errorId }` where
+      // `code` is the NUMERIC HTTP status (not a string identifier).
+      // Probe top-level and nested forms in the number chain so 404/403/
+      // 429 classify correctly.
+      anyErr?.code,
       anyErr?.body?.code,
       anyErr?.response?.body?.code,
     ].find((v): v is number => typeof v === 'number') ?? null;
