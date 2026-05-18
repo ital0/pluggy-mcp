@@ -27,10 +27,13 @@ import { ensureErrorEnvelope } from './outputShape.js';
 
 /**
  * Shape of an MCP tool response carrying a structured error envelope.
- * The MCP SDK accepts arbitrary `structuredContent`, so we type the
- * envelope loosely here — the per-tool `outputSchema` is the contract.
+ * The MCP SDK's `registerTool` callback signature requires an index
+ * signature on the returned object (it allows arbitrary additional
+ * fields), so we mirror that here — without it TS rejects the helper's
+ * return type at the call site.
  */
 interface ToolErrorResponse {
+  [x: string]: unknown;
   isError: true;
   structuredContent: {
     ok: false;
