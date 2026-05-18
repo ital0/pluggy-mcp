@@ -13,8 +13,8 @@
 - **PII redaction on by default** — CPF, full account numbers, card numbers,
   owner names, emails, phones, boleto digitable lines, and CNPJ are masked
   before any data reaches the LLM context.
-- **Per-tool rate limits** with conservative defaults (30/min, 200/day) so a
-  runaway agent can't burn through your Pluggy quota.
+- **Per-tool rate limits** with conservative defaults so a runaway agent
+  can't burn through your Pluggy quota.
 - **Structured audit log** to stderr (one JSON line per call); high-risk
   tools (raw account, identity) emit `sensitive: true` events that **cannot
   be suppressed** by the audit toggle.
