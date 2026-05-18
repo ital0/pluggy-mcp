@@ -35,7 +35,11 @@ import { z } from 'zod';
 import { pluggyRawFetch } from '../pluggy/rawFetch.js';
 import { ErrorCodeEnum } from '../util/errors.js';
 import { ensureOutputShape } from '../util/outputShape.js';
-import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
+import {
+  buildErrorResponse,
+  buildLiteralErrorResponse,
+  buildSuccessResponse,
+} from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import {
   audit,
@@ -208,18 +212,7 @@ export function registerGetRecurringPaymentsTool(server: McpServer): void {
         ensureOutputShape(GetRecurringPaymentsOutputSchema, output, {
           tool: toolName,
         });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              // Generic — the structured channel carries the itemId and
-              // the result payload. Keep the text minimal to avoid
-              // leaking vendor names into transcripts.
-              text: 'Returned recurring-payments analysis.',
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
@@ -363,15 +356,7 @@ export function registerGetInsightsBookTool(server: McpServer): void {
 
         const output = { ok: true as const, itemIds, result };
         ensureOutputShape(GetInsightsBookOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              text: `Returned insights book for ${itemIds.length} item(s).`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(

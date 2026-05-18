@@ -25,7 +25,11 @@ import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum } from '../util/errors.js';
 import { ensureOutputShape } from '../util/outputShape.js';
-import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
+import {
+  buildErrorResponse,
+  buildLiteralErrorResponse,
+  buildSuccessResponse,
+} from '../util/toolResponse.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -522,17 +526,7 @@ export function registerListTransactionsTool(server: McpServer): void {
           transactions,
         };
         ensureOutputShape(ListTransactionsOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              text: truncated
-                ? `Returned page ${effectivePage} of ${totalPages} (${transactions.length} of ${total} transactions).`
-                : `Returned ${transactions.length} transaction(s).`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
@@ -612,18 +606,7 @@ export function registerGetTransactionTool(server: McpServer): void {
 
         const output = { ok: true as const, transaction };
         ensureOutputShape(GetTransactionOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              // Generic — the id is already in `structuredContent` and
-              // amounts can carry context that's useful to leak into a
-              // transcript, but we keep this line minimal on purpose.
-              text: 'Returned transaction details.',
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(

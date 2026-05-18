@@ -9,7 +9,11 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum } from '../util/errors.js';
 import { ensureOutputShape } from '../util/outputShape.js';
-import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
+import {
+  buildErrorResponse,
+  buildLiteralErrorResponse,
+  buildSuccessResponse,
+} from '../util/toolResponse.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -178,17 +182,7 @@ export function registerListConnectorsTool(server: McpServer): void {
           tool: 'listConnectors',
         });
 
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              text: truncated
-                ? `Found ${connectors.length} of ${total} Pluggy connector(s) (truncated; pagination ships in a later PR).`
-                : `Found ${connectors.length} Pluggy connector(s).`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         // Must include `structuredContent` even on errors when an
@@ -310,15 +304,7 @@ export function registerGetConnectorTool(server: McpServer): void {
 
         const output = { ok: true as const, connector };
         ensureOutputShape(GetConnectorOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              text: `Connector ${c.id} (${c.country}) health=${c.health.status}.`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(

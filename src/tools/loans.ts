@@ -22,7 +22,11 @@ import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum } from '../util/errors.js';
 import { ensureOutputShape } from '../util/outputShape.js';
-import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
+import {
+  buildErrorResponse,
+  buildLiteralErrorResponse,
+  buildSuccessResponse,
+} from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -493,17 +497,7 @@ export function registerListLoansTool(server: McpServer): void {
           loans,
         };
         ensureOutputShape(ListLoansOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              text: truncated
-                ? `Found ${loans.length} of ${total} loan(s) (truncated; pagination ships in a later PR).`
-                : `Found ${loans.length} loan(s).`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
@@ -580,10 +574,7 @@ export function registerGetLoanTool(server: McpServer): void {
 
         const output = { ok: true as const, loan };
         ensureOutputShape(GetLoanOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [{ type: 'text' as const, text: 'Returned loan details.' }],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
