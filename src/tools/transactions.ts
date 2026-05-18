@@ -23,8 +23,9 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
-import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
-import { ensureOutputShape, ensureErrorEnvelope } from '../util/outputShape.js';
+import { ErrorCodeEnum } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
+import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -446,16 +447,7 @@ export function registerListTransactionsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const effectivePage = page ?? 1;
@@ -495,16 +487,7 @@ export function registerListTransactionsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'NOT_FOUND';
           const message = `Requested page ${effectivePage} exceeds totalPages ${totalPages}.`;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'NOT_FOUND' as const,
-            message,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: message }],
-          };
+          return buildLiteralErrorResponse('NOT_FOUND', message);
         }
 
         if (totalPages === 0 && transactions.length > 0) {
@@ -552,28 +535,14 @@ export function registerListTransactionsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchTransactions',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
-        const errorOutput = ensureErrorEnvelope(
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchTransactions' },
           ListTransactionsOutputSchema,
-          {
-            ok: false as const,
-            errorCode: safe.errorCode,
-            requestId: safe.requestId,
-            message: safe.message,
-          },
-          { tool: toolName },
         );
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -634,16 +603,7 @@ export function registerGetTransactionTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -666,28 +626,14 @@ export function registerGetTransactionTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchTransaction',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
-        const errorOutput = ensureErrorEnvelope(
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchTransaction' },
           GetTransactionOutputSchema,
-          {
-            ok: false as const,
-            errorCode: safe.errorCode,
-            requestId: safe.requestId,
-            message: safe.message,
-          },
-          { tool: toolName },
         );
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
