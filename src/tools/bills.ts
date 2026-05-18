@@ -20,7 +20,9 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
-import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ErrorCodeEnum } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
+import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -113,7 +115,8 @@ function mapBill(b: BillLike): z.infer<typeof BillSchema> {
   };
 }
 
-const ListBillsOutputShape = {
+// Single source of truth — see transactions.ts for rationale.
+const ListBillsOutputSchema = z.object({
   ok: z.boolean(),
   accountId: z.string().optional(),
   total: z.number().optional(),
@@ -122,15 +125,15 @@ const ListBillsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const GetBillOutputShape = {
+const GetBillOutputSchema = z.object({
   ok: z.boolean(),
   bill: BillSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
 export function registerListBillsTool(server: McpServer): void {
   const toolName = 'listBills';
@@ -152,7 +155,7 @@ export function registerListBillsTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy credit-card account id (UUID) to list bills for.'),
       },
-      outputSchema: ListBillsOutputShape,
+      outputSchema: ListBillsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Credit-Card Bills',
         readOnlyHint: true,
@@ -175,16 +178,7 @@ export function registerListBillsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -213,6 +207,7 @@ export function registerListBillsTool(server: McpServer): void {
           truncated,
           bills,
         };
+        ensureOutputShape(ListBillsOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -226,23 +221,14 @@ export function registerListBillsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchCreditCardBills',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchCreditCardBills' },
+          ListBillsOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -277,7 +263,7 @@ export function registerGetBillTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy credit-card bill id (UUID) to fetch.'),
       },
-      outputSchema: GetBillOutputShape,
+      outputSchema: GetBillOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Credit-Card Bill',
         readOnlyHint: true,
@@ -300,16 +286,7 @@ export function registerGetBillTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -317,6 +294,7 @@ export function registerGetBillTool(server: McpServer): void {
         const bill = mapBill(b as unknown as BillLike);
 
         const output = { ok: true as const, bill };
+        ensureOutputShape(GetBillOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -329,23 +307,14 @@ export function registerGetBillTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchCreditCardBill',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchCreditCardBill' },
+          GetBillOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,

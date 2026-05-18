@@ -25,7 +25,9 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
-import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ErrorCodeEnum } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
+import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -114,7 +116,7 @@ const InvestmentTransactionSchema = z.object({
   type: z.string().nullable(),
   // Free text — wrapped.
   description: z.string().nullable(),
-  investmentId: z.string().nullable(),
+  investmentId: z.string().nullable().optional(),
   quantity: z.number().nullable(),
   value: z.number().nullable(),
   amount: z.number().nullable(),
@@ -177,7 +179,7 @@ type InvestmentTransactionLike = {
   id: string;
   type: string | null;
   description: string | null;
-  investmentId: string | null;
+  investmentId?: string | null;
   quantity: number | null;
   value: number | null;
   amount: number | null;
@@ -268,7 +270,10 @@ function mapInvestmentTransaction(
     id: t.id,
     type: t.type,
     description: wrapUntrusted(t.description),
-    investmentId: t.investmentId,
+    // Coalesce undefined → null so JSON.stringify keeps the key in the
+    // envelope. Schema accepts both, but dropping it silently produces
+    // an inconsistent shape across rows in the same response.
+    investmentId: t.investmentId ?? null,
     quantity: t.quantity,
     value: t.value,
     amount: t.amount,
@@ -300,7 +305,8 @@ function mapInvestmentTransaction(
 // Output shapes
 // ---------------------------------------------------------------------------
 
-const ListInvestmentsOutputShape = {
+// Single source of truth — see transactions.ts for rationale.
+const ListInvestmentsOutputSchema = z.object({
   ok: z.boolean(),
   itemId: z.string().optional(),
   total: z.number().optional(),
@@ -309,17 +315,17 @@ const ListInvestmentsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const GetInvestmentOutputShape = {
+const GetInvestmentOutputSchema = z.object({
   ok: z.boolean(),
   investment: InvestmentSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const ListInvestmentTransactionsOutputShape = {
+const ListInvestmentTransactionsOutputSchema = z.object({
   ok: z.boolean(),
   investmentId: z.string().optional(),
   total: z.number().optional(),
@@ -328,7 +334,7 @@ const ListInvestmentTransactionsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
 // ---------------------------------------------------------------------------
 // Tools
@@ -354,7 +360,7 @@ export function registerListInvestmentsTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy Item id (UUID) whose investments should be listed.'),
       },
-      outputSchema: ListInvestmentsOutputShape,
+      outputSchema: ListInvestmentsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Investments',
         readOnlyHint: true,
@@ -377,31 +383,13 @@ export function registerListInvestmentsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         if (!isItemAllowed(itemId)) {
           outcome = 'error';
           errorCode = 'FORBIDDEN';
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'FORBIDDEN' as const,
-            message: ITEM_NOT_ALLOWED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: ITEM_NOT_ALLOWED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('FORBIDDEN', ITEM_NOT_ALLOWED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -431,6 +419,7 @@ export function registerListInvestmentsTool(server: McpServer): void {
           truncated,
           investments,
         };
+        ensureOutputShape(ListInvestmentsOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -444,23 +433,14 @@ export function registerListInvestmentsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchInvestments',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchInvestments' },
+          ListInvestmentsOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -495,7 +475,7 @@ export function registerGetInvestmentTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy investment id (UUID) to fetch.'),
       },
-      outputSchema: GetInvestmentOutputShape,
+      outputSchema: GetInvestmentOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Investment',
         readOnlyHint: true,
@@ -518,16 +498,7 @@ export function registerGetInvestmentTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -535,6 +506,7 @@ export function registerGetInvestmentTool(server: McpServer): void {
         const investment = mapInvestment(i as unknown as InvestmentLike, sec.redact);
 
         const output = { ok: true as const, investment };
+        ensureOutputShape(GetInvestmentOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -543,23 +515,14 @@ export function registerGetInvestmentTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchInvestment',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchInvestment' },
+          GetInvestmentOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -594,7 +557,7 @@ export function registerListInvestmentTransactionsTool(server: McpServer): void 
           .uuid()
           .describe('The Pluggy investment id (UUID) to list transactions for.'),
       },
-      outputSchema: ListInvestmentTransactionsOutputShape,
+      outputSchema: ListInvestmentTransactionsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Investment Transactions',
         readOnlyHint: true,
@@ -617,16 +580,7 @@ export function registerListInvestmentTransactionsTool(server: McpServer): void 
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -657,6 +611,9 @@ export function registerListInvestmentTransactionsTool(server: McpServer): void 
           truncated,
           transactions,
         };
+        ensureOutputShape(ListInvestmentTransactionsOutputSchema, output, {
+          tool: toolName,
+        });
         return {
           structuredContent: output,
           content: [
@@ -670,23 +627,14 @@ export function registerListInvestmentTransactionsTool(server: McpServer): void 
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchInvestmentTransactions',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchInvestmentTransactions' },
+          ListInvestmentTransactionsOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,

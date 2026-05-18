@@ -23,7 +23,9 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
-import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ErrorCodeEnum } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
+import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -138,7 +140,7 @@ const TransactionSchema = z.object({
   currencyCode: z.string(),
   category: z.string().nullable(),
   status: z.enum(['PENDING', 'POSTED']).optional(),
-  providerCode: z.string().optional(),
+  providerCode: z.string().nullable().optional(),
   paymentData: PaymentDataSchema.optional(),
   creditCardMetadata: CreditCardMetadataSchema.nullable(),
   merchant: MerchantSchema.optional(),
@@ -149,7 +151,12 @@ const TransactionSchema = z.object({
   updatedAt: z.string(),
 });
 
-const ListTransactionsOutputShape = {
+// Single source of truth: declare the Zod object once, then derive the raw
+// shape for `registerTool({ outputSchema })` via `.shape`. Previously the
+// raw shape and the validator mirror were two separate values that could
+// drift — the whole point of `ensureOutputShape` is to catch shape drift,
+// so the validator MUST be the same object the SDK is checking against.
+const ListTransactionsOutputSchema = z.object({
   ok: z.boolean(),
   accountId: z.string().optional(),
   page: z.number().optional(),
@@ -161,15 +168,15 @@ const ListTransactionsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const GetTransactionOutputShape = {
+const GetTransactionOutputSchema = z.object({
   ok: z.boolean(),
   transaction: TransactionSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
 /**
  * Mask a payer/receiver participant. Document number is CPF (11 digits)
@@ -223,7 +230,7 @@ type TransactionLike = {
   currencyCode: string;
   category: string | null;
   status?: 'PENDING' | 'POSTED';
-  providerCode?: string;
+  providerCode?: string | null;
   paymentData?: {
     payer?: {
       documentNumber?: { value?: string; type?: 'CPF' | 'CNPJ' };
@@ -416,7 +423,7 @@ export function registerListTransactionsTool(server: McpServer): void {
           .optional()
           .describe(`Page size; default ${DEFAULT_PAGE_SIZE}, max ${MAX_PAGE_SIZE}.`),
       },
-      outputSchema: ListTransactionsOutputShape,
+      outputSchema: ListTransactionsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Transactions',
         readOnlyHint: true,
@@ -440,16 +447,7 @@ export function registerListTransactionsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const effectivePage = page ?? 1;
@@ -489,16 +487,7 @@ export function registerListTransactionsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'NOT_FOUND';
           const message = `Requested page ${effectivePage} exceeds totalPages ${totalPages}.`;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'NOT_FOUND' as const,
-            message,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: message }],
-          };
+          return buildLiteralErrorResponse('NOT_FOUND', message);
         }
 
         if (totalPages === 0 && transactions.length > 0) {
@@ -532,6 +521,7 @@ export function registerListTransactionsTool(server: McpServer): void {
           truncated,
           transactions,
         };
+        ensureOutputShape(ListTransactionsOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -545,23 +535,14 @@ export function registerListTransactionsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchTransactions',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchTransactions' },
+          ListTransactionsOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -599,7 +580,7 @@ export function registerGetTransactionTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy transaction id (UUID) to fetch.'),
       },
-      outputSchema: GetTransactionOutputShape,
+      outputSchema: GetTransactionOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Transaction',
         readOnlyHint: true,
@@ -622,16 +603,7 @@ export function registerGetTransactionTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -639,6 +611,7 @@ export function registerGetTransactionTool(server: McpServer): void {
         const transaction = mapTransaction(t as unknown as TransactionLike, sec.redact);
 
         const output = { ok: true as const, transaction };
+        ensureOutputShape(GetTransactionOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -653,23 +626,14 @@ export function registerGetTransactionTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchTransaction',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchTransaction' },
+          GetTransactionOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,

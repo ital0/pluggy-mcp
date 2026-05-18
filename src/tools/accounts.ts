@@ -17,6 +17,8 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { toIsoIfDate } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ensureOutputShape, ensureErrorEnvelope } from '../util/outputShape.js';
+import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import { performance } from 'node:perf_hooks';
@@ -89,7 +91,12 @@ const AccountSchema = z.object({
 // `registerTool`'s `outputSchema` because the SDK wraps the argument in
 // `z.object(...)`. Both branches still share a single discriminator
 // (`ok`) and the tool callback emits a consistent shape per branch.
-const GetAccountsOutputShape = {
+//
+// Single source of truth — see `transactions.ts` for rationale. The raw
+// shape passed to `registerTool({ outputSchema })` is derived from this
+// schema's `.shape` so the validator used by `ensureOutputShape` and the
+// shape the MCP SDK checks against cannot drift.
+const GetAccountsOutputSchema = z.object({
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
   // Success-only fields.
   itemId: z.string().optional().describe('Echo of the requested itemId'),
@@ -103,7 +110,7 @@ const GetAccountsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
-};
+});
 
 export function registerGetAccountsTool(server: McpServer): void {
   server.registerTool(
@@ -124,7 +131,7 @@ export function registerGetAccountsTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy Item id (UUID) whose accounts should be fetched.'),
       },
-      outputSchema: GetAccountsOutputShape,
+      outputSchema: GetAccountsOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Accounts',
         readOnlyHint: true,
@@ -152,16 +159,7 @@ export function registerGetAccountsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         // Allowlist check BEFORE building the client — keeps the SDK call
@@ -170,16 +168,7 @@ export function registerGetAccountsTool(server: McpServer): void {
         if (!isItemAllowed(itemId)) {
           outcome = 'error';
           errorCode = 'FORBIDDEN';
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'FORBIDDEN' as const,
-            message: ITEM_NOT_ALLOWED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: ITEM_NOT_ALLOWED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('FORBIDDEN', ITEM_NOT_ALLOWED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -264,6 +253,7 @@ export function registerGetAccountsTool(server: McpServer): void {
           truncated,
           accounts,
         };
+        ensureOutputShape(GetAccountsOutputSchema, output, { tool: 'getAccounts' });
 
         return {
           structuredContent: output,
@@ -281,23 +271,18 @@ export function registerGetAccountsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: 'getAccounts',
-          operation: 'fetchAccounts',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        // Defensive envelope validation lives inside buildErrorResponse:
+        // a future schema tightening that rejects the error envelope is
+        // logged + falls back to a hardcoded INTERNAL envelope, so the
+        // client never sees an MCP protocol-level rejection.
+        const r = buildErrorResponse(
+          err,
+          { tool: 'getAccounts', operation: 'fetchAccounts' },
+          GetAccountsOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: 'getAccounts',
@@ -334,13 +319,13 @@ const RawAccountSchema = AccountSchema.extend({
   // the SDK already declares `string | null`.
 });
 
-const GetRawAccountDetailsOutputShape = {
+const GetRawAccountDetailsOutputSchema = z.object({
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
   account: RawAccountSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
-};
+});
 
 export function registerGetRawAccountDetailsTool(server: McpServer): void {
   const toolName = 'getRawAccountDetails';
@@ -361,7 +346,7 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy account id (UUID) to fetch in unmasked form.'),
       },
-      outputSchema: GetRawAccountDetailsOutputShape,
+      outputSchema: GetRawAccountDetailsOutputSchema.shape,
       annotations: {
         title: 'Get Raw Pluggy Account Details (unmasked)',
         // Read-only — we do not mutate Pluggy data. "Destructive" in the
@@ -389,16 +374,7 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const { accountId } = args;
@@ -452,6 +428,9 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, account };
+        ensureOutputShape(GetRawAccountDetailsOutputSchema, output, {
+          tool: toolName,
+        });
         return {
           structuredContent: output,
           content: [
@@ -467,23 +446,14 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchAccount',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchAccount' },
+          GetRawAccountDetailsOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -511,13 +481,13 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
 // no more revealing than `getAccounts` and we don't want sensitive-event
 // log shipping to amplify ordinary reads.
 
-const GetAccountOutputShape = {
+const GetAccountOutputSchema = z.object({
   ok: z.boolean(),
   account: AccountSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
 export function registerGetAccountTool(server: McpServer): void {
   const toolName = 'getAccount';
@@ -539,7 +509,7 @@ export function registerGetAccountTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy account id (UUID) to fetch.'),
       },
-      outputSchema: GetAccountOutputShape,
+      outputSchema: GetAccountOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Account',
         readOnlyHint: true,
@@ -562,16 +532,7 @@ export function registerGetAccountTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -619,6 +580,7 @@ export function registerGetAccountTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, account };
+        ensureOutputShape(GetAccountOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -632,23 +594,14 @@ export function registerGetAccountTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchAccount',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchAccount' },
+          GetAccountOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -682,14 +635,14 @@ const RealTimeBalanceSchema = z.object({
   updateDateTime: z.string(),
 });
 
-const GetRealTimeBalanceOutputShape = {
+const GetRealTimeBalanceOutputSchema = z.object({
   ok: z.boolean(),
   accountId: z.string().optional(),
   balance: RealTimeBalanceSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
 export function registerGetRealTimeBalanceTool(server: McpServer): void {
   const toolName = 'getRealTimeBalance';
@@ -711,7 +664,7 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy account id (UUID) to refresh.'),
       },
-      outputSchema: GetRealTimeBalanceOutputShape,
+      outputSchema: GetRealTimeBalanceOutputSchema.shape,
       annotations: {
         title: 'Get Real-Time Balance',
         readOnlyHint: true,
@@ -739,16 +692,7 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -763,6 +707,9 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, accountId, balance };
+        ensureOutputShape(GetRealTimeBalanceOutputSchema, output, {
+          tool: toolName,
+        });
         return {
           structuredContent: output,
           content: [
@@ -797,12 +744,17 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
             'This account either does not exist or the connector does not ' +
             `support /accounts/{id}/balance. request-id=${safe.requestId}`;
         }
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message,
-        };
+        // See note on the `getAccounts` catch block above.
+        const errorOutput = ensureErrorEnvelope(
+          GetRealTimeBalanceOutputSchema,
+          {
+            ok: false as const,
+            errorCode: safe.errorCode,
+            requestId: safe.requestId,
+            message,
+          },
+          { tool: toolName },
+        );
         return {
           isError: true,
           structuredContent: errorOutput,

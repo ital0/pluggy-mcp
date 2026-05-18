@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { MissingCredentialsError } from '../pluggy/client.js';
+import { OUTPUT_SCHEMA_MISMATCH } from './outputShape.js';
 
 /**
  * Stable enum the LLM can pattern-match on. The values double as
@@ -34,6 +35,7 @@ export const ErrorCodeEnum = z.enum([
   'LOCAL_RATE_LIMITED',
   'UPSTREAM_5XX',
   'NETWORK',
+  'INTERNAL',
   'UNKNOWN',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCodeEnum>;
@@ -49,6 +51,38 @@ export interface SafeError {
   message: string;
   /** UUID correlating this response with the stderr log line. */
   requestId: string;
+}
+
+/**
+ * Heuristic: does an object look like a Pluggy data-API error body?
+ * Pluggy rejects with the parsed JSON body itself, shaped like
+ * `{ message, code: 404, codeDescription, errorId }`. The numeric `code`
+ * is the HTTP status. Any OTHER upstream (a CDN, a proxy, a future SDK
+ * version) that happens to set `code: <number>` for non-status meaning
+ * must NOT be mis-classified — so we gate the `code`-as-status probe
+ * behind the presence of one of Pluggy's discriminating fields.
+ */
+function looksLikePluggyErrorBody(
+  b: unknown,
+): b is { code: number; message: string; codeDescription?: unknown; errorId?: unknown } {
+  // Array guard: arrays are `typeof 'object'` but never Pluggy bodies. The
+  // numeric `code` probe below would otherwise accept e.g. `[401]` after a
+  // future SDK quirk via array-index property access.
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return false;
+  const obj = b as Record<string, unknown>;
+  return (
+    typeof obj.code === 'number' &&
+    // NaN and Infinity are `typeof 'number'` — explicitly exclude them, plus
+    // anything outside the valid HTTP status range. Without this gate a
+    // future upstream returning `{ code: NaN, message: '...', errorId: '...' }`
+    // would slip through and then fail STATUS_MAP lookup as `undefined`,
+    // landing on UNKNOWN instead of the more specific NETWORK/INTERNAL paths.
+    Number.isFinite(obj.code) &&
+    obj.code >= 100 &&
+    obj.code <= 599 &&
+    typeof obj.message === 'string' &&
+    ('codeDescription' in obj || 'errorId' in obj)
+  );
 }
 
 /**
@@ -69,12 +103,36 @@ export interface SafeError {
  */
 function extractStatus(err: unknown): { status: number | null; code: string | null } {
   const anyErr = err as {
-    response?: { statusCode?: number; status?: number; body?: { statusCode?: number; code?: string } };
+    response?: {
+      statusCode?: number;
+      status?: number;
+      body?: { statusCode?: number; code?: string | number };
+    };
     statusCode?: number;
-    code?: string;
-    body?: { statusCode?: number; code?: string };
-    cause?: { statusCode?: number; code?: string };
+    code?: string | number;
+    body?: { statusCode?: number; code?: string | number };
+    cause?: { statusCode?: number; code?: string | number };
   };
+  // Gate the `code`-as-numeric-status probe behind a Pluggy-shape check.
+  // Without the gate, a non-Pluggy upstream returning `{ code: 401 }`
+  // with a non-HTTP meaning (CDN provider codes, etc.) would be
+  // mis-classified as UNAUTHORIZED.
+  const pluggyCodeStatus = looksLikePluggyErrorBody(anyErr)
+    ? anyErr.code
+    : looksLikePluggyErrorBody(anyErr?.body)
+    ? anyErr.body?.code
+    : looksLikePluggyErrorBody(anyErr?.response?.body)
+    ? anyErr.response?.body?.code
+    : undefined;
+  // Same gate for `cause.code`: Node 18+ `fetch` and AggregateError surface
+  // libuv errnos (e.g. `-4058` for ENOENT on Windows) as a numeric
+  // `cause.code`. Without the Pluggy-shape check those negative integers
+  // would short-circuit the status chain and silently mis-classify as
+  // UNKNOWN — strings (ECONNRESET et al) still flow through the `code`
+  // probe below for NETWORK.
+  const causeCodeStatus = looksLikePluggyErrorBody(anyErr?.cause)
+    ? (anyErr.cause as { code: number }).code
+    : undefined;
   const status: number | null =
     [
       anyErr?.response?.statusCode,
@@ -83,6 +141,8 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
       anyErr?.statusCode,
       anyErr?.body?.statusCode,
       anyErr?.cause?.statusCode,
+      pluggyCodeStatus,
+      causeCodeStatus,
     ].find((v): v is number => typeof v === 'number') ?? null;
   // Node 18+ `fetch` surfaces network errors as `TypeError` with the syscall
   // code on `cause.code` (e.g. `ENOTFOUND`, `ECONNREFUSED`), not at the top
@@ -172,7 +232,43 @@ export function classifyAndReport(
     };
   }
 
-  // 2) Map HTTP / network errors to a stable enum.
+  // 2) Internal shape-drift: a tool's success payload failed its own
+  //    outputSchema. The thrown Error carries a Symbol brand so we can
+  //    distinguish it from upstream Pluggy errors here without colliding
+  //    with any string `.code` value an upstream library might set.
+  //    Hardcoded user-facing message — never interpolate the Zod issue
+  //    list, that text is for the operator's stderr log only.
+  if (
+    err instanceof Error &&
+    (err as Error & { [OUTPUT_SCHEMA_MISMATCH]?: boolean })[OUTPUT_SCHEMA_MISMATCH] === true
+  ) {
+    const message =
+      'Internal schema mismatch — server output did not match its declared shape. Please open an issue.';
+    const errAsAny = err as { name?: unknown; message?: unknown };
+    console.error(
+      JSON.stringify({
+        ts,
+        tool: ctx.tool,
+        operation: ctx.operation ?? null,
+        requestId,
+        errorCode: 'INTERNAL',
+        // Keep `status` and `code` keys present (as null) so downstream
+        // grep/jq pipelines see a uniform log-line shape across the
+        // INTERNAL branch and the main classifier branch below.
+        status: null,
+        code: null,
+        name: typeof errAsAny?.name === 'string' ? errAsAny.name : null,
+        msg: typeof errAsAny?.message === 'string' ? errAsAny.message : null,
+      }),
+    );
+    return {
+      errorCode: 'INTERNAL',
+      requestId,
+      message: `${message} request-id=${requestId}`,
+    };
+  }
+
+  // 3) Map HTTP / network errors to a stable enum.
   const { status, code } = extractStatus(err);
   let errorCode: ErrorCode = 'UNKNOWN';
   let message = 'Unexpected error talking to Pluggy. See server logs.';
@@ -197,7 +293,7 @@ export function classifyAndReport(
     message = 'Network error talking to Pluggy. Retry shortly.';
   }
 
-  // 3) Structured single-line stderr log. We deliberately do NOT include
+  // 4) Structured single-line stderr log. We deliberately do NOT include
   //    the response body or the stack: those are the channels through
   //    which secrets / customer data leak. The error name + message are
   //    enough to triage, and PLUGGY_MCP_DEBUG=1 unlocks the rest.

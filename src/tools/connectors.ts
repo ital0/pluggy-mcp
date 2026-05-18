@@ -7,7 +7,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
-import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ErrorCodeEnum } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
+import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -64,7 +66,8 @@ const ConnectorSchema = z.object({
 // discriminator. Variant-specific fields are optional at the SDK level;
 // the tool callback always emits one consistent shape per branch so
 // downstream consumers can switch on `ok` reliably.
-const ListConnectorsOutputShape = {
+// Single source of truth — see `transactions.ts` for rationale.
+const ListConnectorsOutputSchema = z.object({
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
   // Success-only fields.
   total: z.number().optional().describe('Total connectors reported by Pluggy'),
@@ -77,7 +80,7 @@ const ListConnectorsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
-};
+});
 
 export function registerListConnectorsTool(server: McpServer): void {
   server.registerTool(
@@ -93,7 +96,7 @@ export function registerListConnectorsTool(server: McpServer): void {
         // Intentionally empty — `GET /connectors` returns the full list and
         // server-side filters live on a follow-up tool (added in PR2+).
       },
-      outputSchema: ListConnectorsOutputShape,
+      outputSchema: ListConnectorsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Connectors',
         readOnlyHint: true,
@@ -116,16 +119,7 @@ export function registerListConnectorsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -180,6 +174,9 @@ export function registerListConnectorsTool(server: McpServer): void {
           truncated,
           connectors,
         };
+        ensureOutputShape(ListConnectorsOutputSchema, output, {
+          tool: 'listConnectors',
+        });
 
         return {
           structuredContent: output,
@@ -194,25 +191,17 @@ export function registerListConnectorsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: 'listConnectors',
-          operation: 'fetchConnectors',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
         // Must include `structuredContent` even on errors when an
         // `outputSchema` is declared — the SDK throws McpError otherwise.
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        // buildErrorResponse handles validation; see helper for details.
+        const r = buildErrorResponse(
+          err,
+          { tool: 'listConnectors', operation: 'fetchConnectors' },
+          ListConnectorsOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: 'listConnectors',
@@ -242,13 +231,13 @@ export function registerListConnectorsTool(server: McpServer): void {
 // render a UI form, not useful to the LLM, and exposing it would expand
 // the schema significantly without a corresponding caller benefit.
 
-const GetConnectorOutputShape = {
+const GetConnectorOutputSchema = z.object({
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
   connector: ConnectorSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
-};
+});
 
 export function registerGetConnectorTool(server: McpServer): void {
   const toolName = 'getConnector';
@@ -268,7 +257,7 @@ export function registerGetConnectorTool(server: McpServer): void {
           .positive()
           .describe('Numeric Pluggy connector id (NOT a UUID).'),
       },
-      outputSchema: GetConnectorOutputShape,
+      outputSchema: GetConnectorOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Connector',
         readOnlyHint: true,
@@ -291,16 +280,7 @@ export function registerGetConnectorTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -329,6 +309,7 @@ export function registerGetConnectorTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, connector };
+        ensureOutputShape(GetConnectorOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -340,23 +321,14 @@ export function registerGetConnectorTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchConnector',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchConnector' },
+          GetConnectorOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,

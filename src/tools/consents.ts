@@ -19,7 +19,9 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
-import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ErrorCodeEnum } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
+import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -44,7 +46,8 @@ const ConsentSchema = z.object({
   revokedAt: z.string().nullable(),
 });
 
-const ListConsentsOutputShape = {
+// Single source of truth — see transactions.ts for rationale.
+const ListConsentsOutputSchema = z.object({
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
   itemId: z.string().optional().describe('Echo of the requested itemId'),
   total: z.number().optional(),
@@ -56,15 +59,15 @@ const ListConsentsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const GetConsentOutputShape = {
+const GetConsentOutputSchema = z.object({
   ok: z.boolean(),
   consent: ConsentSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
 export function registerListConsentsTool(server: McpServer): void {
   const toolName = 'listConsents';
@@ -83,7 +86,7 @@ export function registerListConsentsTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy Item id (UUID) whose consents should be listed.'),
       },
-      outputSchema: ListConsentsOutputShape,
+      outputSchema: ListConsentsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Consents',
         readOnlyHint: true,
@@ -106,31 +109,13 @@ export function registerListConsentsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         if (!isItemAllowed(itemId)) {
           outcome = 'error';
           errorCode = 'FORBIDDEN';
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'FORBIDDEN' as const,
-            message: ITEM_NOT_ALLOWED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: ITEM_NOT_ALLOWED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('FORBIDDEN', ITEM_NOT_ALLOWED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -168,6 +153,7 @@ export function registerListConsentsTool(server: McpServer): void {
           truncated,
           consents,
         };
+        ensureOutputShape(ListConsentsOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -184,23 +170,14 @@ export function registerListConsentsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchConsents',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchConsents' },
+          ListConsentsOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -235,7 +212,7 @@ export function registerGetConsentTool(server: McpServer): void {
           .uuid()
           .describe('The consent id (UUID) to fetch.'),
       },
-      outputSchema: GetConsentOutputShape,
+      outputSchema: GetConsentOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Consent',
         readOnlyHint: true,
@@ -258,16 +235,7 @@ export function registerGetConsentTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -281,16 +249,7 @@ export function registerGetConsentTool(server: McpServer): void {
         if (!isItemAllowed(c.itemId)) {
           outcome = 'error';
           errorCode = 'FORBIDDEN';
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'FORBIDDEN' as const,
-            message: ITEM_NOT_ALLOWED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: ITEM_NOT_ALLOWED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('FORBIDDEN', ITEM_NOT_ALLOWED_MESSAGE);
         }
 
         const consent = {
@@ -304,6 +263,7 @@ export function registerGetConsentTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, consent };
+        ensureOutputShape(GetConsentOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -316,23 +276,14 @@ export function registerGetConsentTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchConsent',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchConsent' },
+          GetConsentOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,

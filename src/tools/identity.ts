@@ -45,7 +45,9 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
-import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ErrorCodeEnum } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
+import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import {
   audit,
@@ -405,13 +407,15 @@ function mapIdentity(
 // Output shape & tools
 // ---------------------------------------------------------------------------
 
-const IdentityOutputShape = {
+// Single source of truth — see `transactions.ts` for rationale. Shared by
+// both identity tools (they expose the same envelope shape).
+const IdentityOutputSchema = z.object({
   ok: z.boolean(),
   identity: IdentitySchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
 export function registerGetIdentityByItemTool(server: McpServer): void {
   const toolName = 'getIdentityByItem';
@@ -437,7 +441,7 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy Item id (UUID) whose identity should be fetched.'),
       },
-      outputSchema: IdentityOutputShape,
+      outputSchema: IdentityOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Identity By Item',
         // Read-only with respect to upstream data; "destructive" in the
@@ -466,16 +470,7 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         // Identity toggle check BEFORE the allowlist — we want NEITHER
@@ -484,31 +479,13 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
         if (!sec.enableIdentity) {
           outcome = 'error';
           errorCode = 'FORBIDDEN';
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'FORBIDDEN' as const,
-            message: IDENTITY_DISABLED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: IDENTITY_DISABLED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('FORBIDDEN', IDENTITY_DISABLED_MESSAGE);
         }
 
         if (!isItemAllowed(itemId)) {
           outcome = 'error';
           errorCode = 'FORBIDDEN';
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'FORBIDDEN' as const,
-            message: ITEM_NOT_ALLOWED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: ITEM_NOT_ALLOWED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('FORBIDDEN', ITEM_NOT_ALLOWED_MESSAGE);
         }
 
         // Past all gates — an SDK call is about to happen (success or
@@ -528,6 +505,7 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
         }
 
         const output = { ok: true as const, identity };
+        ensureOutputShape(IdentityOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -542,23 +520,14 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchIdentityByItemId',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchIdentityByItemId' },
+          IdentityOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -602,7 +571,7 @@ export function registerGetIdentityTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy identity id (UUID) to fetch.'),
       },
-      outputSchema: IdentityOutputShape,
+      outputSchema: IdentityOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Identity',
         readOnlyHint: true,
@@ -628,31 +597,13 @@ export function registerGetIdentityTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         if (!sec.enableIdentity) {
           outcome = 'error';
           errorCode = 'FORBIDDEN';
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'FORBIDDEN' as const,
-            message: IDENTITY_DISABLED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: IDENTITY_DISABLED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('FORBIDDEN', IDENTITY_DISABLED_MESSAGE);
         }
 
         // Past all gates — an SDK call is about to happen.
@@ -668,6 +619,7 @@ export function registerGetIdentityTool(server: McpServer): void {
         }
 
         const output = { ok: true as const, identity };
+        ensureOutputShape(IdentityOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -676,23 +628,14 @@ export function registerGetIdentityTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchIdentity',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchIdentity' },
+          IdentityOutputSchema,
+        );
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
