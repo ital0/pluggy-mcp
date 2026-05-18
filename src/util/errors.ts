@@ -69,10 +69,14 @@ export interface SafeError {
  */
 function extractStatus(err: unknown): { status: number | null; code: string | null } {
   const anyErr = err as {
-    response?: { statusCode?: number; status?: number; body?: { statusCode?: number; code?: string } };
+    response?: {
+      statusCode?: number;
+      status?: number;
+      body?: { statusCode?: number; code?: string | number };
+    };
     statusCode?: number;
     code?: string;
-    body?: { statusCode?: number; code?: string };
+    body?: { statusCode?: number; code?: string | number };
     cause?: { statusCode?: number; code?: string };
   };
   const status: number | null =
@@ -83,6 +87,11 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
       anyErr?.statusCode,
       anyErr?.body?.statusCode,
       anyErr?.cause?.statusCode,
+      // Pluggy data-API rejects with `body = { code: 404, codeDescription, ... }`
+      // where `code` is the NUMERIC HTTP status (not a string identifier).
+      // Probe these in the number chain so 404/403/429 classify correctly.
+      anyErr?.body?.code,
+      anyErr?.response?.body?.code,
     ].find((v): v is number => typeof v === 'number') ?? null;
   // Node 18+ `fetch` surfaces network errors as `TypeError` with the syscall
   // code on `cause.code` (e.g. `ENOTFOUND`, `ECONNREFUSED`), not at the top
