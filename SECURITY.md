@@ -74,10 +74,10 @@ data, or simply hammering the institution.
 - `PLUGGY_ITEM_IDS` allowlist (operator-defined) constrains which
   Pluggy Items are queryable. Gated tools refuse out-of-list items
   before any SDK call; the `getInsightsBook` tool validates every
-  itemId in its input array — any denial returns `FORBIDDEN`.
-- An explicitly empty `PLUGGY_ITEM_IDS` is treated as **deny all**
-  (fail-closed). A `items_allowlist_empty` startup event is logged so
-  the misconfig is discoverable.
+  itemId in its input array — any denial returns `FORBIDDEN`. An
+  explicitly empty value is treated as **deny all** (fail-closed) and
+  logs an `items_allowlist_empty` startup event so the misconfig is
+  discoverable.
 - Identity tools are **opt-in only**
   (`PLUGGY_MCP_ENABLE_IDENTITY=true`, strict `=== 'true'` comparison —
   `"1"`, `"yes"`, `"TRUE"`, typos all fail closed).
