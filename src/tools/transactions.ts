@@ -411,20 +411,20 @@ export function registerListTransactionsTool(server: McpServer): void {
         'PLUGGY_ITEM_IDS. Use only with IDs you trust.',
       inputSchema: {
         accountId: z.string().uuid().describe('The Pluggy account id (UUID).'),
-        from: DateStringSchema.optional().describe('Date >= this value.'),
-        to: DateStringSchema.optional().describe('Date <= this value.'),
+        from: DateStringSchema.nullish().describe('Date >= this value.'),
+        to: DateStringSchema.nullish().describe('Date <= this value.'),
         page: z
           .number()
           .int()
           .min(1)
-          .optional()
+          .nullish()
           .describe('1-based page number; default 1.'),
         pageSize: z
           .number()
           .int()
           .min(1)
           .max(MAX_PAGE_SIZE)
-          .optional()
+          .nullish()
           .describe(`Page size; default ${DEFAULT_PAGE_SIZE}, max ${MAX_PAGE_SIZE}.`),
       },
       outputSchema: ListTransactionsOutputSchema.shape,
@@ -462,8 +462,8 @@ export function registerListTransactionsTool(server: McpServer): void {
         // We forward `from` / `to` only; ids / createdAtFrom are not part
         // of the PR3 scope.
         const result = await client.fetchTransactions(accountId, {
-          from,
-          to,
+          from: from ?? undefined,
+          to: to ?? undefined,
           page: effectivePage,
           pageSize: effectivePageSize,
         });
