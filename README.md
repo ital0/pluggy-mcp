@@ -207,6 +207,8 @@ Claude Desktop reads from a per-OS config file:
 | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Linux | `~/.config/Claude/claude_desktop_config.json` |
 
+*Linux is supported only via unofficial community builds (e.g., `claude-desktop-debian`); Anthropic does not officially ship Claude Desktop for Linux.*
+
 Point the config at your local clone (until the npm package is published,
 `npx -y pluggy-mcp` returns 404):
 
