@@ -96,3 +96,49 @@ export function buildLiteralErrorResponse(
     content: [{ type: 'text', text: message }],
   };
 }
+
+/**
+ * Shape of an MCP tool response carrying a structured success envelope
+ * mirrored as JSON in the `content` text channel.
+ *
+ * The MCP SDK's `registerTool` callback signature allows additional
+ * fields on the returned object, so we mirror the same index signature
+ * used by `ToolErrorResponse`.
+ */
+interface ToolSuccessResponse<T extends { ok: true }> {
+  [x: string]: unknown;
+  structuredContent: T;
+  content: [{ type: 'text'; text: string }];
+}
+
+/**
+ * Build an MCP tool success response that mirrors `structuredContent`
+ * as a serialized-JSON `TextContent` block.
+ *
+ * Why: per the MCP spec (2025-06-18, "Structured Content"):
+ *   "For backwards compatibility, a tool that returns structured content
+ *    SHOULD also return the serialized JSON in a TextContent block."
+ *
+ * Many clients (notably claude.ai today) only surface `content[].text`
+ * to the model and ignore `structuredContent` entirely. Without the
+ * mirror, a multi-step workflow such as `getAccounts` →
+ * `listTransactions` is broken: the `accountId` lives in
+ * `structuredContent.accounts[].id` but never reaches the model, so the
+ * follow-up call cannot be constructed.
+ *
+ * Mirroring the validated `output` exactly keeps the invariant
+ * "text === JSON.stringify(structuredContent)" trivially true and
+ * impossible to drift. Existing `<untrusted>` markers wrapping
+ * institution-composed strings ride along inside the JSON values, so
+ * indirect prompt-injection posture is unchanged — the wire protocol
+ * was already sending `structuredContent` through the same transport,
+ * the LLM just couldn't see it.
+ */
+export function buildSuccessResponse<T extends { ok: true }>(
+  structured: T,
+): ToolSuccessResponse<T> {
+  return {
+    structuredContent: structured,
+    content: [{ type: 'text', text: JSON.stringify(structured) }],
+  };
+}
