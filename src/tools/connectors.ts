@@ -8,6 +8,7 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -78,6 +79,9 @@ const ListConnectorsOutputShape = {
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
 };
+
+// Validator mirror — see `transactions.ts` for rationale.
+const ListConnectorsOutputSchema = z.object(ListConnectorsOutputShape);
 
 export function registerListConnectorsTool(server: McpServer): void {
   server.registerTool(
@@ -180,6 +184,9 @@ export function registerListConnectorsTool(server: McpServer): void {
           truncated,
           connectors,
         };
+        ensureOutputShape(ListConnectorsOutputSchema, output, {
+          tool: 'listConnectors',
+        });
 
         return {
           structuredContent: output,
@@ -249,6 +256,9 @@ const GetConnectorOutputShape = {
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
 };
+
+// Validator mirror — see `transactions.ts` for rationale.
+const GetConnectorOutputSchema = z.object(GetConnectorOutputShape);
 
 export function registerGetConnectorTool(server: McpServer): void {
   const toolName = 'getConnector';
@@ -329,6 +339,7 @@ export function registerGetConnectorTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, connector };
+        ensureOutputShape(GetConnectorOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [

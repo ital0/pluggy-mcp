@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { toIsoIfDate } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import { performance } from 'node:perf_hooks';
@@ -104,6 +105,9 @@ const GetAccountsOutputShape = {
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
 };
+
+// Validator mirror — see `transactions.ts` for rationale.
+const GetAccountsOutputSchema = z.object(GetAccountsOutputShape);
 
 export function registerGetAccountsTool(server: McpServer): void {
   server.registerTool(
@@ -264,6 +268,7 @@ export function registerGetAccountsTool(server: McpServer): void {
           truncated,
           accounts,
         };
+        ensureOutputShape(GetAccountsOutputSchema, output, { tool: 'getAccounts' });
 
         return {
           structuredContent: output,
@@ -341,6 +346,9 @@ const GetRawAccountDetailsOutputShape = {
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
 };
+
+// Validator mirror — see `transactions.ts` for rationale.
+const GetRawAccountDetailsOutputSchema = z.object(GetRawAccountDetailsOutputShape);
 
 export function registerGetRawAccountDetailsTool(server: McpServer): void {
   const toolName = 'getRawAccountDetails';
@@ -452,6 +460,9 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, account };
+        ensureOutputShape(GetRawAccountDetailsOutputSchema, output, {
+          tool: toolName,
+        });
         return {
           structuredContent: output,
           content: [
@@ -518,6 +529,9 @@ const GetAccountOutputShape = {
   requestId: z.string().optional(),
   message: z.string().optional(),
 };
+
+// Validator mirror — see `transactions.ts` for rationale.
+const GetAccountOutputSchema = z.object(GetAccountOutputShape);
 
 export function registerGetAccountTool(server: McpServer): void {
   const toolName = 'getAccount';
@@ -619,6 +633,7 @@ export function registerGetAccountTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, account };
+        ensureOutputShape(GetAccountOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -690,6 +705,9 @@ const GetRealTimeBalanceOutputShape = {
   requestId: z.string().optional(),
   message: z.string().optional(),
 };
+
+// Validator mirror — see `transactions.ts` for rationale.
+const GetRealTimeBalanceOutputSchema = z.object(GetRealTimeBalanceOutputShape);
 
 export function registerGetRealTimeBalanceTool(server: McpServer): void {
   const toolName = 'getRealTimeBalance';
@@ -763,6 +781,9 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, accountId, balance };
+        ensureOutputShape(GetRealTimeBalanceOutputSchema, output, {
+          tool: toolName,
+        });
         return {
           structuredContent: output,
           content: [

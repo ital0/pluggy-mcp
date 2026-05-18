@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import {
   audit,
@@ -100,6 +101,9 @@ const GetItemOutputShape = {
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
 };
+
+// Validator mirror — see `transactions.ts` for rationale.
+const GetItemOutputSchema = z.object(GetItemOutputShape);
 
 /**
  * Map one product state, wrapping any institution-composed strings inside
@@ -268,6 +272,7 @@ export function registerGetItemTool(server: McpServer): void {
         };
 
         const output = { ok: true as const, item };
+        ensureOutputShape(GetItemOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
