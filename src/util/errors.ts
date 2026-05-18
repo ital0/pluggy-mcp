@@ -122,6 +122,11 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
       anyErr?.body?.statusCode,
       anyErr?.cause?.statusCode,
       pluggyCodeStatus,
+      // `cause.code` widened to `string | number`: typed for consistency
+      // with the other `code` probes, but only contributes here when the
+      // runtime value is numeric. String values flow through the `code`
+      // chain below for ETIMEDOUT/ECONNRESET/ENOTFOUND/ECONNREFUSED.
+      anyErr?.cause?.code,
     ].find((v): v is number => typeof v === 'number') ?? null;
   // Node 18+ `fetch` surfaces network errors as `TypeError` with the syscall
   // code on `cause.code` (e.g. `ENOTFOUND`, `ECONNREFUSED`), not at the top
