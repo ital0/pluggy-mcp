@@ -62,16 +62,15 @@ data, or simply hammering the institution.
 **Defenses:**
 
 - Per-tool in-memory rate limit
-  (`PLUGGY_MCP_RATELIMIT_PER_MIN`, default **30**;
-  `PLUGGY_MCP_RATELIMIT_PER_DAY`, default **200**).
-  Tools return a `LOCAL_RATE_LIMITED` envelope without calling the SDK
-  when the budget is exhausted (`src/security/rateLimit.ts`).
-  Budgets are **per tool**, held in process memory only, and **reset
-  when the process restarts** — a host that crashes and is relaunched
-  by the MCP client (Cursor / Claude Desktop / Codex) starts with full
-  budgets. The same defaults apply to every tool, including high-PII
+  (`PLUGGY_MCP_RATELIMIT_PER_MIN`, `PLUGGY_MCP_RATELIMIT_PER_DAY` —
+  defaults in the table below). Tools return a `LOCAL_RATE_LIMITED`
+  envelope without calling the SDK when the budget is exhausted
+  (`src/security/rateLimit.ts`). Because budgets are held in process
+  memory, a host that crashes and is relaunched by the MCP client
+  (Cursor / Claude Desktop / Codex) starts with full budgets. The same
+  defaults apply to every tool, including high-PII
   `getRawAccountDetails`, `getIdentity`, and `getIdentityByItem`; lower
-  the per-day budget if you want a tighter ceiling on those.
+  the per-day budget for a tighter ceiling on those.
 - `PLUGGY_ITEM_IDS` allowlist (operator-defined) constrains which
   Pluggy Items are queryable. Gated tools refuse out-of-list items
   before any SDK call; the `getInsightsBook` tool validates every
