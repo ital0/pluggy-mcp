@@ -7,18 +7,9 @@ this document is required reading before deploying the server.
 
 ## Reporting vulnerabilities
 
-This project does not currently publish a dedicated security contact.
-Until one exists:
+Open a [GitHub Security Advisory](https://github.com/pluggyai/pluggy-mcp/security/advisories/new) for any suspected vulnerability. Do **not** file public GitHub issues for security bugs.
 
-1. **Open a private security advisory** on the GitHub repository
-   (`Security → Advisories → Report a vulnerability`) if the platform
-   supports it for this repo.
-2. Otherwise, open a regular GitHub issue with the **`security`** label
-   and **omit exploit details** — a maintainer will reach out for a
-   private channel.
-
-Please do **not** disclose vulnerabilities in public PRs, social media,
-or community chat before a fix has shipped.
+If you are uncertain whether something is a vulnerability, err on the side of using the private advisory channel.
 
 ## Threat model
 
