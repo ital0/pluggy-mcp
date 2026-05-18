@@ -269,7 +269,10 @@ function mapInvestmentTransaction(
     id: t.id,
     type: t.type,
     description: wrapUntrusted(t.description),
-    investmentId: t.investmentId,
+    // Coalesce undefined → null so JSON.stringify keeps the key in the
+    // envelope. Schema accepts both, but dropping it silently produces
+    // an inconsistent shape across rows in the same response.
+    investmentId: t.investmentId ?? null,
     quantity: t.quantity,
     value: t.value,
     amount: t.amount,
