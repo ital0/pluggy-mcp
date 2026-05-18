@@ -81,6 +81,8 @@ You will normally not invoke the server directly — your MCP client
 
 ### Environment variables
 
+<!-- keep this table in sync with src/config.ts and .env.example -->
+
 | Variable | Required | Default | What it does | Security implication |
 | --- | --- | --- | --- | --- |
 | `PLUGGY_CLIENT_ID` | yes | — | Pluggy API client id. | Deleted from `process.env` after first read. |
@@ -107,6 +109,8 @@ list in the [Pluggy dashboard](https://dashboard.pluggy.ai/).
 | Unset (no env var) | No restriction — every item is queryable. |
 | Set, empty/whitespace | **Deny all.** Every gated tool returns `FORBIDDEN`. A `items_allowlist_empty` event is logged at startup so the misconfig is discoverable. |
 | `uuid-a,uuid-b` | Only the listed items are queryable by gated tools. Case-insensitive. |
+
+<!-- keep this list in sync with .env.example PLUGGY_ITEM_IDS comment -->
 
 **Gated tools** (allowlist checked *before* any SDK call):
 
@@ -219,6 +223,8 @@ PLUGGY_CLIENT_SECRET = "your-client-secret"
 Restart Codex after editing the file.
 
 ## Available tools
+
+<!-- keep this table in sync with src/tools/index.ts -->
 
 PII levels: **none** (no personal data), **low** (institution-controlled
 free text, wrapped in `<untrusted>`), **high** (PII redacted by default;
