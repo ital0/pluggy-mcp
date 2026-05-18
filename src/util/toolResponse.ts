@@ -151,7 +151,7 @@ export function buildSuccessResponse<T extends { ok: true }>(
   // `toJSON` that itself throws. None of those shapes are reachable in
   // the current codebase, but an SDK upgrade could introduce them. Tag
   // the rethrow with `errorCode: 'INTERNAL'` so the outer
-  // `classifyAndReport` branch (see `errors.ts`) bucketts this as
+  // `classifyAndReport` branch (see `errors.ts`) buckets this as
   // INTERNAL rather than the much-less-actionable UNKNOWN — operators
   // grep logs by errorCode.
   let serialized: string;
