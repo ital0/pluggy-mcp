@@ -124,6 +124,15 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
     : looksLikePluggyErrorBody(anyErr?.response?.body)
     ? anyErr.response?.body?.code
     : undefined;
+  // Same gate for `cause.code`: Node 18+ `fetch` and AggregateError surface
+  // libuv errnos (e.g. `-4058` for ENOENT on Windows) as a numeric
+  // `cause.code`. Without the Pluggy-shape check those negative integers
+  // would short-circuit the status chain and silently mis-classify as
+  // UNKNOWN — strings (ECONNRESET et al) still flow through the `code`
+  // probe below for NETWORK.
+  const causeCodeStatus = looksLikePluggyErrorBody(anyErr?.cause)
+    ? (anyErr.cause as { code: number }).code
+    : undefined;
   const status: number | null =
     [
       anyErr?.response?.statusCode,
@@ -133,11 +142,7 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
       anyErr?.body?.statusCode,
       anyErr?.cause?.statusCode,
       pluggyCodeStatus,
-      // `cause.code` widened to `string | number`: typed for consistency
-      // with the other `code` probes, but only contributes here when the
-      // runtime value is numeric. String values flow through the `code`
-      // chain below for ETIMEDOUT/ECONNRESET/ENOTFOUND/ECONNREFUSED.
-      anyErr?.cause?.code,
+      causeCodeStatus,
     ].find((v): v is number => typeof v === 'number') ?? null;
   // Node 18+ `fetch` surfaces network errors as `TypeError` with the syscall
   // code on `cause.code` (e.g. `ENOTFOUND`, `ECONNREFUSED`), not at the top
