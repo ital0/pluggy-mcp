@@ -173,7 +173,7 @@ To run against a local clone instead:
       "env": {
         "PLUGGY_CLIENT_ID": "your-client-id",
         "PLUGGY_CLIENT_SECRET": "your-client-secret",
-        "PLUGGY_ITEM_IDS": "uuid-1,uuid-2"
+        "PLUGGY_ITEM_IDS": "YOUR_ITEM_ID_1,YOUR_ITEM_ID_2"
       }
     }
   }
@@ -225,7 +225,7 @@ args = ["-y", "pluggy-mcp"]
 PLUGGY_CLIENT_ID = "your-client-id"
 PLUGGY_CLIENT_SECRET = "your-client-secret"
 # Optional:
-# PLUGGY_ITEM_IDS = "uuid-1,uuid-2"
+# PLUGGY_ITEM_IDS = "YOUR_ITEM_ID_1,YOUR_ITEM_ID_2"
 # PLUGGY_MCP_ENABLE_IDENTITY = "true"
 ```
 
