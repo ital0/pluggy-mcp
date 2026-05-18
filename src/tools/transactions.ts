@@ -150,7 +150,12 @@ const TransactionSchema = z.object({
   updatedAt: z.string(),
 });
 
-const ListTransactionsOutputShape = {
+// Single source of truth: declare the Zod object once, then derive the raw
+// shape for `registerTool({ outputSchema })` via `.shape`. Previously the
+// raw shape and the validator mirror were two separate values that could
+// drift — the whole point of `ensureOutputShape` is to catch shape drift,
+// so the validator MUST be the same object the SDK is checking against.
+const ListTransactionsOutputSchema = z.object({
   ok: z.boolean(),
   accountId: z.string().optional(),
   page: z.number().optional(),
@@ -162,22 +167,15 @@ const ListTransactionsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const GetTransactionOutputShape = {
+const GetTransactionOutputSchema = z.object({
   ok: z.boolean(),
   transaction: TransactionSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
-
-// Validator mirror of the list output shape — passed to `ensureOutputShape`
-// so a shape drift in the success payload is caught BEFORE the MCP SDK's
-// own outputSchema check, which would otherwise reject the envelope after
-// the handler exited (leaving the audit line stuck at outcome=success).
-const ListTransactionsOutputSchema = z.object(ListTransactionsOutputShape);
-const GetTransactionOutputSchema = z.object(GetTransactionOutputShape);
+});
 
 /**
  * Mask a payer/receiver participant. Document number is CPF (11 digits)
@@ -424,7 +422,7 @@ export function registerListTransactionsTool(server: McpServer): void {
           .optional()
           .describe(`Page size; default ${DEFAULT_PAGE_SIZE}, max ${MAX_PAGE_SIZE}.`),
       },
-      outputSchema: ListTransactionsOutputShape,
+      outputSchema: ListTransactionsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Transactions',
         readOnlyHint: true,
@@ -608,7 +606,7 @@ export function registerGetTransactionTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy transaction id (UUID) to fetch.'),
       },
-      outputSchema: GetTransactionOutputShape,
+      outputSchema: GetTransactionOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Transaction',
         readOnlyHint: true,

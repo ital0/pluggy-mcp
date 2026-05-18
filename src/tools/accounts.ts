@@ -90,7 +90,12 @@ const AccountSchema = z.object({
 // `registerTool`'s `outputSchema` because the SDK wraps the argument in
 // `z.object(...)`. Both branches still share a single discriminator
 // (`ok`) and the tool callback emits a consistent shape per branch.
-const GetAccountsOutputShape = {
+//
+// Single source of truth — see `transactions.ts` for rationale. The raw
+// shape passed to `registerTool({ outputSchema })` is derived from this
+// schema's `.shape` so the validator used by `ensureOutputShape` and the
+// shape the MCP SDK checks against cannot drift.
+const GetAccountsOutputSchema = z.object({
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
   // Success-only fields.
   itemId: z.string().optional().describe('Echo of the requested itemId'),
@@ -104,10 +109,7 @@ const GetAccountsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
-};
-
-// Validator mirror — see `transactions.ts` for rationale.
-const GetAccountsOutputSchema = z.object(GetAccountsOutputShape);
+});
 
 export function registerGetAccountsTool(server: McpServer): void {
   server.registerTool(
@@ -128,7 +130,7 @@ export function registerGetAccountsTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy Item id (UUID) whose accounts should be fetched.'),
       },
-      outputSchema: GetAccountsOutputShape,
+      outputSchema: GetAccountsOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Accounts',
         readOnlyHint: true,
@@ -339,16 +341,13 @@ const RawAccountSchema = AccountSchema.extend({
   // the SDK already declares `string | null`.
 });
 
-const GetRawAccountDetailsOutputShape = {
+const GetRawAccountDetailsOutputSchema = z.object({
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
   account: RawAccountSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
-};
-
-// Validator mirror — see `transactions.ts` for rationale.
-const GetRawAccountDetailsOutputSchema = z.object(GetRawAccountDetailsOutputShape);
+});
 
 export function registerGetRawAccountDetailsTool(server: McpServer): void {
   const toolName = 'getRawAccountDetails';
@@ -369,7 +368,7 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy account id (UUID) to fetch in unmasked form.'),
       },
-      outputSchema: GetRawAccountDetailsOutputShape,
+      outputSchema: GetRawAccountDetailsOutputSchema.shape,
       annotations: {
         title: 'Get Raw Pluggy Account Details (unmasked)',
         // Read-only — we do not mutate Pluggy data. "Destructive" in the
@@ -522,16 +521,13 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
 // no more revealing than `getAccounts` and we don't want sensitive-event
 // log shipping to amplify ordinary reads.
 
-const GetAccountOutputShape = {
+const GetAccountOutputSchema = z.object({
   ok: z.boolean(),
   account: AccountSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
-
-// Validator mirror — see `transactions.ts` for rationale.
-const GetAccountOutputSchema = z.object(GetAccountOutputShape);
+});
 
 export function registerGetAccountTool(server: McpServer): void {
   const toolName = 'getAccount';
@@ -553,7 +549,7 @@ export function registerGetAccountTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy account id (UUID) to fetch.'),
       },
-      outputSchema: GetAccountOutputShape,
+      outputSchema: GetAccountOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Account',
         readOnlyHint: true,
@@ -697,17 +693,14 @@ const RealTimeBalanceSchema = z.object({
   updateDateTime: z.string(),
 });
 
-const GetRealTimeBalanceOutputShape = {
+const GetRealTimeBalanceOutputSchema = z.object({
   ok: z.boolean(),
   accountId: z.string().optional(),
   balance: RealTimeBalanceSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
-
-// Validator mirror — see `transactions.ts` for rationale.
-const GetRealTimeBalanceOutputSchema = z.object(GetRealTimeBalanceOutputShape);
+});
 
 export function registerGetRealTimeBalanceTool(server: McpServer): void {
   const toolName = 'getRealTimeBalance';
@@ -729,7 +722,7 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy account id (UUID) to refresh.'),
       },
-      outputSchema: GetRealTimeBalanceOutputShape,
+      outputSchema: GetRealTimeBalanceOutputSchema.shape,
       annotations: {
         title: 'Get Real-Time Balance',
         readOnlyHint: true,

@@ -304,7 +304,8 @@ function mapInvestmentTransaction(
 // Output shapes
 // ---------------------------------------------------------------------------
 
-const ListInvestmentsOutputShape = {
+// Single source of truth — see transactions.ts for rationale.
+const ListInvestmentsOutputSchema = z.object({
   ok: z.boolean(),
   itemId: z.string().optional(),
   total: z.number().optional(),
@@ -313,17 +314,17 @@ const ListInvestmentsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const GetInvestmentOutputShape = {
+const GetInvestmentOutputSchema = z.object({
   ok: z.boolean(),
   investment: InvestmentSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const ListInvestmentTransactionsOutputShape = {
+const ListInvestmentTransactionsOutputSchema = z.object({
   ok: z.boolean(),
   investmentId: z.string().optional(),
   total: z.number().optional(),
@@ -332,14 +333,7 @@ const ListInvestmentTransactionsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
-
-// Validator mirrors — see transactions.ts for rationale.
-const ListInvestmentsOutputSchema = z.object(ListInvestmentsOutputShape);
-const GetInvestmentOutputSchema = z.object(GetInvestmentOutputShape);
-const ListInvestmentTransactionsOutputSchema = z.object(
-  ListInvestmentTransactionsOutputShape,
-);
+});
 
 // ---------------------------------------------------------------------------
 // Tools
@@ -365,7 +359,7 @@ export function registerListInvestmentsTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy Item id (UUID) whose investments should be listed.'),
       },
-      outputSchema: ListInvestmentsOutputShape,
+      outputSchema: ListInvestmentsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Investments',
         readOnlyHint: true,
@@ -507,7 +501,7 @@ export function registerGetInvestmentTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy investment id (UUID) to fetch.'),
       },
-      outputSchema: GetInvestmentOutputShape,
+      outputSchema: GetInvestmentOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Investment',
         readOnlyHint: true,
@@ -607,7 +601,7 @@ export function registerListInvestmentTransactionsTool(server: McpServer): void 
           .uuid()
           .describe('The Pluggy investment id (UUID) to list transactions for.'),
       },
-      outputSchema: ListInvestmentTransactionsOutputShape,
+      outputSchema: ListInvestmentTransactionsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Investment Transactions',
         readOnlyHint: true,

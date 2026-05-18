@@ -94,16 +94,14 @@ const ItemSchema = z.object({
   // in an LLM context.
 });
 
-const GetItemOutputShape = {
+// Single source of truth — see `transactions.ts` for rationale.
+const GetItemOutputSchema = z.object({
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
   item: ItemSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
-};
-
-// Validator mirror — see `transactions.ts` for rationale.
-const GetItemOutputSchema = z.object(GetItemOutputShape);
+});
 
 /**
  * Map one product state, wrapping any institution-composed strings inside
@@ -187,7 +185,7 @@ export function registerGetItemTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy Item id (UUID) to fetch.'),
       },
-      outputSchema: GetItemOutputShape,
+      outputSchema: GetItemOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Item',
         readOnlyHint: true,

@@ -406,17 +406,15 @@ function mapIdentity(
 // Output shape & tools
 // ---------------------------------------------------------------------------
 
-const IdentityOutputShape = {
+// Single source of truth — see `transactions.ts` for rationale. Shared by
+// both identity tools (they expose the same envelope shape).
+const IdentityOutputSchema = z.object({
   ok: z.boolean(),
   identity: IdentitySchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
-
-// Validator mirror — see `transactions.ts` for rationale. Shared by both
-// identity tools (they expose the same envelope shape).
-const IdentityOutputSchema = z.object(IdentityOutputShape);
+});
 
 export function registerGetIdentityByItemTool(server: McpServer): void {
   const toolName = 'getIdentityByItem';
@@ -442,7 +440,7 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy Item id (UUID) whose identity should be fetched.'),
       },
-      outputSchema: IdentityOutputShape,
+      outputSchema: IdentityOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Identity By Item',
         // Read-only with respect to upstream data; "destructive" in the
@@ -608,7 +606,7 @@ export function registerGetIdentityTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy identity id (UUID) to fetch.'),
       },
-      outputSchema: IdentityOutputShape,
+      outputSchema: IdentityOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Identity',
         readOnlyHint: true,

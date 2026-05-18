@@ -395,7 +395,8 @@ function mapLoan(l: LoanLike): z.infer<typeof LoanSchema> {
 // Output shapes & tools
 // ---------------------------------------------------------------------------
 
-const ListLoansOutputShape = {
+// Single source of truth — see `transactions.ts` for rationale.
+const ListLoansOutputSchema = z.object({
   ok: z.boolean(),
   itemId: z.string().optional(),
   total: z.number().optional(),
@@ -404,19 +405,15 @@ const ListLoansOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const GetLoanOutputShape = {
+const GetLoanOutputSchema = z.object({
   ok: z.boolean(),
   loan: LoanSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
-
-// Validator mirrors — see `transactions.ts` for rationale.
-const ListLoansOutputSchema = z.object(ListLoansOutputShape);
-const GetLoanOutputSchema = z.object(GetLoanOutputShape);
+});
 
 export function registerListLoansTool(server: McpServer): void {
   const toolName = 'listLoans';
@@ -438,7 +435,7 @@ export function registerListLoansTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy Item id (UUID) whose loans should be listed.'),
       },
-      outputSchema: ListLoansOutputShape,
+      outputSchema: ListLoansOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Loans',
         readOnlyHint: true,
@@ -577,7 +574,7 @@ export function registerGetLoanTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy loan id (UUID) to fetch.'),
       },
-      outputSchema: GetLoanOutputShape,
+      outputSchema: GetLoanOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Loan',
         readOnlyHint: true,

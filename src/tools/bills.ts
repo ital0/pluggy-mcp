@@ -114,7 +114,8 @@ function mapBill(b: BillLike): z.infer<typeof BillSchema> {
   };
 }
 
-const ListBillsOutputShape = {
+// Single source of truth — see transactions.ts for rationale.
+const ListBillsOutputSchema = z.object({
   ok: z.boolean(),
   accountId: z.string().optional(),
   total: z.number().optional(),
@@ -123,19 +124,15 @@ const ListBillsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const GetBillOutputShape = {
+const GetBillOutputSchema = z.object({
   ok: z.boolean(),
   bill: BillSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
-
-// Validator mirrors — see transactions.ts for rationale.
-const ListBillsOutputSchema = z.object(ListBillsOutputShape);
-const GetBillOutputSchema = z.object(GetBillOutputShape);
+});
 
 export function registerListBillsTool(server: McpServer): void {
   const toolName = 'listBills';
@@ -157,7 +154,7 @@ export function registerListBillsTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy credit-card account id (UUID) to list bills for.'),
       },
-      outputSchema: ListBillsOutputShape,
+      outputSchema: ListBillsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Credit-Card Bills',
         readOnlyHint: true,
@@ -283,7 +280,7 @@ export function registerGetBillTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy credit-card bill id (UUID) to fetch.'),
       },
-      outputSchema: GetBillOutputShape,
+      outputSchema: GetBillOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Credit-Card Bill',
         readOnlyHint: true,

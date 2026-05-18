@@ -33,7 +33,8 @@ const CategorySchema = z.object({
     .describe('Parent category description, when nested'),
 });
 
-const ListCategoriesOutputShape = {
+// Single source of truth — see `transactions.ts` for rationale.
+const ListCategoriesOutputSchema = z.object({
   ok: z.boolean(),
   total: z.number().optional(),
   truncated: z.boolean().optional(),
@@ -41,19 +42,15 @@ const ListCategoriesOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const GetCategoryOutputShape = {
+const GetCategoryOutputSchema = z.object({
   ok: z.boolean(),
   category: CategorySchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
-
-// Validator mirrors — see `transactions.ts` for rationale.
-const ListCategoriesOutputSchema = z.object(ListCategoriesOutputShape);
-const GetCategoryOutputSchema = z.object(GetCategoryOutputShape);
+});
 
 export function registerListCategoriesTool(server: McpServer): void {
   const toolName = 'listCategories';
@@ -68,7 +65,7 @@ export function registerListCategoriesTool(server: McpServer): void {
       inputSchema: {
         // No-arg; Pluggy returns the full taxonomy in a single page.
       },
-      outputSchema: ListCategoriesOutputShape,
+      outputSchema: ListCategoriesOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Categories',
         readOnlyHint: true,
@@ -190,7 +187,7 @@ export function registerGetCategoryTool(server: McpServer): void {
         // — NOT UUIDs. We accept any non-empty string here.
         categoryId: z.string().min(1).describe('The Pluggy category id.'),
       },
-      outputSchema: GetCategoryOutputShape,
+      outputSchema: GetCategoryOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Category',
         readOnlyHint: true,

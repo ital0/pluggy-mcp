@@ -74,7 +74,8 @@ const INSIGHTS_NO_ITEM_IDS_MESSAGE =
 // field validated by `z.unknown()`. Free-text strings inside the payload
 // stay wrapped server-side via the response normalizer below.
 
-const GetRecurringPaymentsOutputShape = {
+// Single source of truth — see `transactions.ts` for rationale.
+const GetRecurringPaymentsOutputSchema = z.object({
   ok: z.boolean(),
   itemId: z.string().optional(),
   // Pass-through payload; the upstream shape is opaque to this server.
@@ -85,10 +86,7 @@ const GetRecurringPaymentsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
-
-// Validator mirror — see `transactions.ts` for rationale.
-const GetRecurringPaymentsOutputSchema = z.object(GetRecurringPaymentsOutputShape);
+});
 
 /**
  * Hardcoded recursion ceiling for the two response normalizers below.
@@ -162,7 +160,7 @@ export function registerGetRecurringPaymentsTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy Item id (UUID) to analyze.'),
       },
-      outputSchema: GetRecurringPaymentsOutputShape,
+      outputSchema: GetRecurringPaymentsOutputSchema.shape,
       annotations: {
         title: 'Get Recurring Payments (premium)',
         readOnlyHint: true,
@@ -278,7 +276,8 @@ export function registerGetRecurringPaymentsTool(server: McpServer): void {
 // `getInsightsBook`
 // ---------------------------------------------------------------------------
 
-const GetInsightsBookOutputShape = {
+// Single source of truth — see `transactions.ts` for rationale.
+const GetInsightsBookOutputSchema = z.object({
   ok: z.boolean(),
   itemIds: z.array(z.string()).optional(),
   // Pass-through; same posture as `getRecurringPayments.result`.
@@ -286,10 +285,7 @@ const GetInsightsBookOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
-
-// Validator mirror — see `transactions.ts` for rationale.
-const GetInsightsBookOutputSchema = z.object(GetInsightsBookOutputShape);
+});
 
 /**
  * Hardcoded ceiling on the number of itemIds accepted per call. The
@@ -328,7 +324,7 @@ export function registerGetInsightsBookTool(server: McpServer): void {
             `One or more Pluggy Item ids (UUIDs). Max ${MAX_INSIGHTS_ITEM_IDS}.`,
           ),
       },
-      outputSchema: GetInsightsBookOutputShape,
+      outputSchema: GetInsightsBookOutputSchema.shape,
       annotations: {
         title: 'Get Insights Book (premium)',
         readOnlyHint: true,

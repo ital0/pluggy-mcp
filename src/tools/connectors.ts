@@ -65,7 +65,8 @@ const ConnectorSchema = z.object({
 // discriminator. Variant-specific fields are optional at the SDK level;
 // the tool callback always emits one consistent shape per branch so
 // downstream consumers can switch on `ok` reliably.
-const ListConnectorsOutputShape = {
+// Single source of truth — see `transactions.ts` for rationale.
+const ListConnectorsOutputSchema = z.object({
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
   // Success-only fields.
   total: z.number().optional().describe('Total connectors reported by Pluggy'),
@@ -78,10 +79,7 @@ const ListConnectorsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
-};
-
-// Validator mirror — see `transactions.ts` for rationale.
-const ListConnectorsOutputSchema = z.object(ListConnectorsOutputShape);
+});
 
 export function registerListConnectorsTool(server: McpServer): void {
   server.registerTool(
@@ -97,7 +95,7 @@ export function registerListConnectorsTool(server: McpServer): void {
         // Intentionally empty — `GET /connectors` returns the full list and
         // server-side filters live on a follow-up tool (added in PR2+).
       },
-      outputSchema: ListConnectorsOutputShape,
+      outputSchema: ListConnectorsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Connectors',
         readOnlyHint: true,
@@ -249,16 +247,13 @@ export function registerListConnectorsTool(server: McpServer): void {
 // render a UI form, not useful to the LLM, and exposing it would expand
 // the schema significantly without a corresponding caller benefit.
 
-const GetConnectorOutputShape = {
+const GetConnectorOutputSchema = z.object({
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
   connector: ConnectorSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional().describe('Correlation id present in stderr logs'),
   message: z.string().optional().describe('Model-actionable error message'),
-};
-
-// Validator mirror — see `transactions.ts` for rationale.
-const GetConnectorOutputSchema = z.object(GetConnectorOutputShape);
+});
 
 export function registerGetConnectorTool(server: McpServer): void {
   const toolName = 'getConnector';
@@ -278,7 +273,7 @@ export function registerGetConnectorTool(server: McpServer): void {
           .positive()
           .describe('Numeric Pluggy connector id (NOT a UUID).'),
       },
-      outputSchema: GetConnectorOutputShape,
+      outputSchema: GetConnectorOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Connector',
         readOnlyHint: true,

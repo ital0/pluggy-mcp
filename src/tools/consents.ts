@@ -45,7 +45,8 @@ const ConsentSchema = z.object({
   revokedAt: z.string().nullable(),
 });
 
-const ListConsentsOutputShape = {
+// Single source of truth — see transactions.ts for rationale.
+const ListConsentsOutputSchema = z.object({
   ok: z.boolean().describe('true on success, false when an error envelope is returned'),
   itemId: z.string().optional().describe('Echo of the requested itemId'),
   total: z.number().optional(),
@@ -57,19 +58,15 @@ const ListConsentsOutputShape = {
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
+});
 
-const GetConsentOutputShape = {
+const GetConsentOutputSchema = z.object({
   ok: z.boolean(),
   consent: ConsentSchema.optional(),
   errorCode: ErrorCodeEnum.optional(),
   requestId: z.string().optional(),
   message: z.string().optional(),
-};
-
-// Validator mirrors — see transactions.ts for rationale.
-const ListConsentsOutputSchema = z.object(ListConsentsOutputShape);
-const GetConsentOutputSchema = z.object(GetConsentOutputShape);
+});
 
 export function registerListConsentsTool(server: McpServer): void {
   const toolName = 'listConsents';
@@ -88,7 +85,7 @@ export function registerListConsentsTool(server: McpServer): void {
           .uuid()
           .describe('The Pluggy Item id (UUID) whose consents should be listed.'),
       },
-      outputSchema: ListConsentsOutputShape,
+      outputSchema: ListConsentsOutputSchema.shape,
       annotations: {
         title: 'List Pluggy Consents',
         readOnlyHint: true,
@@ -241,7 +238,7 @@ export function registerGetConsentTool(server: McpServer): void {
           .uuid()
           .describe('The consent id (UUID) to fetch.'),
       },
-      outputSchema: GetConsentOutputShape,
+      outputSchema: GetConsentOutputSchema.shape,
       annotations: {
         title: 'Get Pluggy Consent',
         readOnlyHint: true,
