@@ -16,7 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { MissingCredentialsError } from '../pluggy/client.js';
-import { OUTPUT_SCHEMA_MISMATCH_CODE } from '../security/audit.js';
+import { OUTPUT_SCHEMA_MISMATCH } from './outputShape.js';
 
 /**
  * Stable enum the LLM can pattern-match on. The values double as
@@ -187,12 +187,15 @@ export function classifyAndReport(
   }
 
   // 2) Internal shape-drift: a tool's success payload failed its own
-  //    outputSchema. The thrown Error carries a sentinel `code` so we can
-  //    distinguish it from upstream Pluggy errors here. Hardcoded
-  //    user-facing message — never interpolate the Zod issue list, that
-  //    text is for the operator's stderr log only.
-  const internalCode = (err as { code?: unknown } | null | undefined)?.code;
-  if (internalCode === OUTPUT_SCHEMA_MISMATCH_CODE) {
+  //    outputSchema. The thrown Error carries a Symbol brand so we can
+  //    distinguish it from upstream Pluggy errors here without colliding
+  //    with any string `.code` value an upstream library might set.
+  //    Hardcoded user-facing message — never interpolate the Zod issue
+  //    list, that text is for the operator's stderr log only.
+  if (
+    err instanceof Error &&
+    (err as Error & { [OUTPUT_SCHEMA_MISMATCH]?: boolean })[OUTPUT_SCHEMA_MISMATCH] === true
+  ) {
     const message =
       'Internal schema mismatch — server output did not match its declared shape. Please open an issue.';
     const errAsAny = err as { name?: unknown; message?: unknown };

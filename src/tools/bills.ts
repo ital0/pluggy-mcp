@@ -21,12 +21,12 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
   audit,
   checkRateLimit,
-  ensureOutputShape,
   hashArgsSafely,
   hashForAudit,
   wrapUntrusted,
