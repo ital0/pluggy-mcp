@@ -335,18 +335,9 @@ not include enrichment / insights.
 ## Security defaults
 
 The defaults are tuned for a household / single-operator setup that wants
-fast onboarding without giving the LLM raw PII. Highlights:
-
-- PII redacted by default; opt-out logs a loud startup `WARN`.
-- Audit log is **always on for `sensitive: true` events** even when
-  `PLUGGY_MCP_AUDIT=false`.
-- Identity tools are **opt-in** and additionally audit every SDK call.
-- Pluggy credentials are removed from `process.env` after the first read.
-- Items can be scoped via `PLUGGY_ITEM_IDS`; an explicitly empty value
-  means **deny all** (fail-closed).
-
-Read [SECURITY.md](./SECURITY.md) for the full threat model before
-exposing this server to any LLM client.
+fast onboarding without giving the LLM raw PII. See the env table above
+for the per-toggle defaults, and read [SECURITY.md](./SECURITY.md) for
+the full threat model before exposing this server to any LLM client.
 
 ## Development
 
