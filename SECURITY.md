@@ -84,8 +84,9 @@ data, or simply hammering the institution.
   `"1"`, `"yes"`, `"TRUE"`, typos all fail closed).
 - **`sensitive: true` audit events are unbypassable.** Setting
   `PLUGGY_MCP_AUDIT=false` only suppresses non-sensitive lines; calls
-  to `getRawAccountDetails`, `getIdentityByItem`, `getIdentity`, and
-  intelligence SDK paths continue to log.
+  to the high-PII / intelligence tools — `getRawAccountDetails`,
+  `getIdentityByItem`, `getIdentity`, `getRecurringPayments`,
+  `getInsightsBook` — continue to log.
 
 ### 4. Credential exfiltration via env var dumps
 
