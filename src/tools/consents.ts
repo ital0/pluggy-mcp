@@ -37,6 +37,7 @@ const ConsentSchema = z.object({
   products: z.array(z.string()).describe('Products the consent covers'),
   openFinancePermissionsGranted: z
     .array(z.string())
+    .nullable()
     .describe('Open Finance permission strings granted'),
   createdAt: z.string(),
   expiresAt: z.string().nullable(),
