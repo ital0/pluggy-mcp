@@ -17,7 +17,7 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { toIsoIfDate } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
-import { ensureOutputShape } from '../util/outputShape.js';
+import { ensureOutputShape, ensureErrorEnvelope } from '../util/outputShape.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import { performance } from 'node:perf_hooks';
@@ -294,12 +294,21 @@ export function registerGetAccountsTool(server: McpServer): void {
         });
         errorCode = safe.errorCode;
         requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
+        // Defensive: validate the error envelope against the tool's
+        // outputSchema before returning. If a future schema tightening
+        // makes this envelope invalid, the helper logs a WARN and
+        // returns a hardcoded fallback so the client never sees an
+        // MCP protocol-level rejection instead of a structured error.
+        const errorOutput = ensureErrorEnvelope(
+          GetAccountsOutputSchema,
+          {
+            ok: false as const,
+            errorCode: safe.errorCode,
+            requestId: safe.requestId,
+            message: safe.message,
+          },
+          { tool: 'getAccounts' },
+        );
         return {
           isError: true,
           structuredContent: errorOutput,
@@ -483,12 +492,18 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
         });
         errorCode = safe.errorCode;
         requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
+        // See note on the `getAccounts` catch block above for the
+        // rationale behind `ensureErrorEnvelope`.
+        const errorOutput = ensureErrorEnvelope(
+          GetRawAccountDetailsOutputSchema,
+          {
+            ok: false as const,
+            errorCode: safe.errorCode,
+            requestId: safe.requestId,
+            message: safe.message,
+          },
+          { tool: toolName },
+        );
         return {
           isError: true,
           structuredContent: errorOutput,
@@ -649,12 +664,17 @@ export function registerGetAccountTool(server: McpServer): void {
         });
         errorCode = safe.errorCode;
         requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
+        // See note on the `getAccounts` catch block above.
+        const errorOutput = ensureErrorEnvelope(
+          GetAccountOutputSchema,
+          {
+            ok: false as const,
+            errorCode: safe.errorCode,
+            requestId: safe.requestId,
+            message: safe.message,
+          },
+          { tool: toolName },
+        );
         return {
           isError: true,
           structuredContent: errorOutput,
@@ -811,12 +831,17 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
             'This account either does not exist or the connector does not ' +
             `support /accounts/{id}/balance. request-id=${safe.requestId}`;
         }
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message,
-        };
+        // See note on the `getAccounts` catch block above.
+        const errorOutput = ensureErrorEnvelope(
+          GetRealTimeBalanceOutputSchema,
+          {
+            ok: false as const,
+            errorCode: safe.errorCode,
+            requestId: safe.requestId,
+            message,
+          },
+          { tool: toolName },
+        );
         return {
           isError: true,
           structuredContent: errorOutput,

@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
-import { ensureOutputShape } from '../util/outputShape.js';
+import { ensureOutputShape, ensureErrorEnvelope } from '../util/outputShape.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -235,12 +235,17 @@ export function registerListBillsTool(server: McpServer): void {
         });
         errorCode = safe.errorCode;
         requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
+        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
+        const errorOutput = ensureErrorEnvelope(
+          ListBillsOutputSchema,
+          {
+            ok: false as const,
+            errorCode: safe.errorCode,
+            requestId: safe.requestId,
+            message: safe.message,
+          },
+          { tool: toolName },
+        );
         return {
           isError: true,
           structuredContent: errorOutput,
@@ -339,12 +344,17 @@ export function registerGetBillTool(server: McpServer): void {
         });
         errorCode = safe.errorCode;
         requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
+        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
+        const errorOutput = ensureErrorEnvelope(
+          GetBillOutputSchema,
+          {
+            ok: false as const,
+            errorCode: safe.errorCode,
+            requestId: safe.requestId,
+            message: safe.message,
+          },
+          { tool: toolName },
+        );
         return {
           isError: true,
           structuredContent: errorOutput,

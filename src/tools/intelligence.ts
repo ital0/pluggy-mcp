@@ -34,7 +34,7 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { pluggyRawFetch } from '../pluggy/rawFetch.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
-import { ensureOutputShape } from '../util/outputShape.js';
+import { ensureOutputShape, ensureErrorEnvelope } from '../util/outputShape.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import {
   audit,
@@ -245,12 +245,17 @@ export function registerGetRecurringPaymentsTool(server: McpServer): void {
         });
         errorCode = safe.errorCode;
         requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
+        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
+        const errorOutput = ensureErrorEnvelope(
+          GetRecurringPaymentsOutputSchema,
+          {
+            ok: false as const,
+            errorCode: safe.errorCode,
+            requestId: safe.requestId,
+            message: safe.message,
+          },
+          { tool: toolName },
+        );
         return {
           isError: true,
           structuredContent: errorOutput,
@@ -437,12 +442,17 @@ export function registerGetInsightsBookTool(server: McpServer): void {
         });
         errorCode = safe.errorCode;
         requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
+        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
+        const errorOutput = ensureErrorEnvelope(
+          GetInsightsBookOutputSchema,
+          {
+            ok: false as const,
+            errorCode: safe.errorCode,
+            requestId: safe.requestId,
+            message: safe.message,
+          },
+          { tool: toolName },
+        );
         return {
           isError: true,
           structuredContent: errorOutput,

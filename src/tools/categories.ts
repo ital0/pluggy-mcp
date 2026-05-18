@@ -13,7 +13,7 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
-import { ensureOutputShape } from '../util/outputShape.js';
+import { ensureOutputShape, ensureErrorEnvelope } from '../util/outputShape.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -147,12 +147,17 @@ export function registerListCategoriesTool(server: McpServer): void {
         });
         errorCode = safe.errorCode;
         requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
+        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
+        const errorOutput = ensureErrorEnvelope(
+          ListCategoriesOutputSchema,
+          {
+            ok: false as const,
+            errorCode: safe.errorCode,
+            requestId: safe.requestId,
+            message: safe.message,
+          },
+          { tool: toolName },
+        );
         return {
           isError: true,
           structuredContent: errorOutput,
@@ -250,12 +255,17 @@ export function registerGetCategoryTool(server: McpServer): void {
         });
         errorCode = safe.errorCode;
         requestId = safe.requestId;
-        const errorOutput = {
-          ok: false as const,
-          errorCode: safe.errorCode,
-          requestId: safe.requestId,
-          message: safe.message,
-        };
+        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
+        const errorOutput = ensureErrorEnvelope(
+          GetCategoryOutputSchema,
+          {
+            ok: false as const,
+            errorCode: safe.errorCode,
+            requestId: safe.requestId,
+            message: safe.message,
+          },
+          { tool: toolName },
+        );
         return {
           isError: true,
           structuredContent: errorOutput,
