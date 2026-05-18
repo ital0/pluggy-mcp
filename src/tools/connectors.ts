@@ -7,8 +7,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
-import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
-import { ensureOutputShape, ensureErrorEnvelope } from '../util/outputShape.js';
+import { ErrorCodeEnum } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
+import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -118,16 +119,7 @@ export function registerListConnectorsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -199,30 +191,17 @@ export function registerListConnectorsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: 'listConnectors',
-          operation: 'fetchConnectors',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
         // Must include `structuredContent` even on errors when an
         // `outputSchema` is declared — the SDK throws McpError otherwise.
-        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
-        const errorOutput = ensureErrorEnvelope(
+        // buildErrorResponse handles validation; see helper for details.
+        const r = buildErrorResponse(
+          err,
+          { tool: 'listConnectors', operation: 'fetchConnectors' },
           ListConnectorsOutputSchema,
-          {
-            ok: false as const,
-            errorCode: safe.errorCode,
-            requestId: safe.requestId,
-            message: safe.message,
-          },
-          { tool: 'listConnectors' },
         );
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: 'listConnectors',
@@ -301,16 +280,7 @@ export function registerGetConnectorTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -351,28 +321,14 @@ export function registerGetConnectorTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchConnector',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        // Defensive: see ensureErrorEnvelope rationale in `accounts.ts`.
-        const errorOutput = ensureErrorEnvelope(
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchConnector' },
           GetConnectorOutputSchema,
-          {
-            ok: false as const,
-            errorCode: safe.errorCode,
-            requestId: safe.requestId,
-            message: safe.message,
-          },
-          { tool: toolName },
         );
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
