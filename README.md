@@ -29,7 +29,7 @@
   explicitly set `PLUGGY_MCP_ENABLE_IDENTITY=true`.
 
 ```
-MCP client (Cursor / Claude Desktop / Codex CLI)
+MCP client (Cursor / Claude Desktop / Claude Code / Codex CLI)
         │  stdio JSON-RPC
         ▼
    pluggy-mcp
@@ -66,6 +66,7 @@ node dist/index.js
 
 You will normally not invoke the server directly — your MCP client
 ([Cursor](#cursor), [Claude Desktop](#claude-desktop),
+[Claude Code](#claude-code),
 [OpenAI Codex CLI](#openai-codex-cli)) will launch it on demand.
 
 ## Configuration
@@ -222,6 +223,35 @@ Claude Desktop reads from a per-OS config file:
 
 Restart Claude Desktop after editing the file. Add the optional env vars
 (`PLUGGY_ITEM_IDS`, `PLUGGY_MCP_ENABLE_IDENTITY`, etc.) the same way.
+
+### Claude Code
+
+Claude Code uses the `claude mcp add` CLI. Until `pluggy-mcp` is published to
+npm, point at your local clone:
+
+```bash
+claude mcp add pluggy \
+  --scope user \
+  --env PLUGGY_CLIENT_ID=your-client-id \
+  --env PLUGGY_CLIENT_SECRET=your-client-secret \
+  -- node /path/to/your/clone/of/pluggy-mcp/dist/index.js
+```
+
+Once the npm package is published you can use:
+
+```bash
+claude mcp add pluggy \
+  --scope user \
+  --env PLUGGY_CLIENT_ID=your-client-id \
+  --env PLUGGY_CLIENT_SECRET=your-client-secret \
+  -- npx -y pluggy-mcp
+```
+
+Notes:
+- All flags (`--scope`, `--env`, `--transport`) must come **before** the server name. `--` separates the server name from the command.
+- `--scope user` makes the server available across every project (stored in `~/.claude.json`). Use `--scope local` (default) to scope it to the current project, or `--scope project` to write to a `.mcp.json` file shared via version control.
+- Stdio is the default transport, so `--transport stdio` is optional.
+- Verify with `claude mcp list` and `/mcp` inside a Claude Code session.
 
 ### OpenAI Codex CLI
 
