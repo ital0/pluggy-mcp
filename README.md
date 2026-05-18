@@ -169,7 +169,7 @@ To run against a local clone instead:
   "mcpServers": {
     "pluggy": {
       "command": "node",
-      "args": ["/absolute/path/to/pluggy-mcp/dist/index.js"],
+      "args": ["/path/to/your/clone/of/pluggy-mcp/dist/index.js"],
       "env": {
         "PLUGGY_CLIENT_ID": "your-client-id",
         "PLUGGY_CLIENT_SECRET": "your-client-secret",
