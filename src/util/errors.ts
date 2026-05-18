@@ -54,6 +54,27 @@ export interface SafeError {
 }
 
 /**
+ * Heuristic: does an object look like a Pluggy data-API error body?
+ * Pluggy rejects with the parsed JSON body itself, shaped like
+ * `{ message, code: 404, codeDescription, errorId }`. The numeric `code`
+ * is the HTTP status. Any OTHER upstream (a CDN, a proxy, a future SDK
+ * version) that happens to set `code: <number>` for non-status meaning
+ * must NOT be mis-classified — so we gate the `code`-as-status probe
+ * behind the presence of one of Pluggy's discriminating fields.
+ */
+function looksLikePluggyErrorBody(
+  b: unknown,
+): b is { code: number; message: string; codeDescription?: unknown; errorId?: unknown } {
+  if (!b || typeof b !== 'object') return false;
+  const obj = b as Record<string, unknown>;
+  return (
+    typeof obj.code === 'number' &&
+    typeof obj.message === 'string' &&
+    ('codeDescription' in obj || 'errorId' in obj)
+  );
+}
+
+/**
  * Best-effort extraction of HTTP status / code from heterogeneous error
  * shapes:
  *  - `got` HTTPError → `.response.statusCode`
@@ -79,8 +100,19 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
     statusCode?: number;
     code?: string | number;
     body?: { statusCode?: number; code?: string | number };
-    cause?: { statusCode?: number; code?: string };
+    cause?: { statusCode?: number; code?: string | number };
   };
+  // Gate the `code`-as-numeric-status probe behind a Pluggy-shape check.
+  // Without the gate, a non-Pluggy upstream returning `{ code: 401 }`
+  // with a non-HTTP meaning (CDN provider codes, etc.) would be
+  // mis-classified as UNAUTHORIZED.
+  const pluggyCodeStatus = looksLikePluggyErrorBody(anyErr)
+    ? anyErr.code
+    : looksLikePluggyErrorBody(anyErr?.body)
+    ? anyErr.body?.code
+    : looksLikePluggyErrorBody(anyErr?.response?.body)
+    ? anyErr.response?.body?.code
+    : undefined;
   const status: number | null =
     [
       anyErr?.response?.statusCode,
@@ -89,14 +121,7 @@ function extractStatus(err: unknown): { status: number | null; code: string | nu
       anyErr?.statusCode,
       anyErr?.body?.statusCode,
       anyErr?.cause?.statusCode,
-      // Pluggy data-API rejects with the parsed body as the err value
-      // itself: `{ message, code: 404, codeDescription, errorId }` where
-      // `code` is the NUMERIC HTTP status (not a string identifier).
-      // Probe top-level and nested forms in the number chain so 404/403/
-      // 429 classify correctly.
-      anyErr?.code,
-      anyErr?.body?.code,
-      anyErr?.response?.body?.code,
+      pluggyCodeStatus,
     ].find((v): v is number => typeof v === 'number') ?? null;
   // Node 18+ `fetch` surfaces network errors as `TypeError` with the syscall
   // code on `cause.code` (e.g. `ENOTFOUND`, `ECONNREFUSED`), not at the top
