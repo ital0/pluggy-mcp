@@ -21,7 +21,11 @@ import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum } from '../util/errors.js';
 import { ensureOutputShape } from '../util/outputShape.js';
-import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
+import {
+  buildErrorResponse,
+  buildLiteralErrorResponse,
+  buildSuccessResponse,
+} from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import {
   audit,
@@ -254,17 +258,7 @@ export function registerGetItemTool(server: McpServer): void {
 
         const output = { ok: true as const, item };
         ensureOutputShape(GetItemOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              // Generic — the structured channel carries the id; keep the
-              // raw id out of transcripts and summaries.
-              text: `Item status=${it.status}.`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(

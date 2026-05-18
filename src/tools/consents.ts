@@ -21,7 +21,11 @@ import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum } from '../util/errors.js';
 import { ensureOutputShape } from '../util/outputShape.js';
-import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
+import {
+  buildErrorResponse,
+  buildLiteralErrorResponse,
+  buildSuccessResponse,
+} from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -154,20 +158,7 @@ export function registerListConsentsTool(server: McpServer): void {
           consents,
         };
         ensureOutputShape(ListConsentsOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              // Keep ids out of the free-text channel — `structuredContent`
-              // already echoes `itemId`. Other tools in this server do
-              // the same; stay consistent.
-              text: truncated
-                ? `Found ${consents.length} of ${total} consent(s) (truncated; pagination ships in a later PR).`
-                : `Found ${consents.length} consent(s).`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
@@ -264,16 +255,7 @@ export function registerGetConsentTool(server: McpServer): void {
 
         const output = { ok: true as const, consent };
         ensureOutputShape(GetConsentOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              // Generic — the ids are already in `structuredContent.consent`.
-              text: 'Returned consent details.',
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(

@@ -3,9 +3,15 @@
  *
  * Categories are the canonical taxonomy Pluggy assigns to transactions
  * (`categoryId` on a Transaction maps to one of these). They are global
- * (not per-item), entirely public, contain no PII, and the descriptions
- * are short Pluggy-controlled enum-like strings — so no `<untrusted>`
- * wrapping and no redaction.
+ * (not per-item), entirely public, and contain no PII — so no redaction.
+ *
+ * The `description` / `parentDescription` strings are short Pluggy-
+ * controlled enum-like labels, but we still wrap them in `<untrusted>`
+ * as defense-in-depth: now that the MCP success response mirrors
+ * `structuredContent` into the LLM-facing text channel
+ * (`util/toolResponse.ts`), the cost of wrapping a vendor-controlled
+ * string is trivial and matches what every other tool does for fields
+ * like `marketingName` or connector `name`.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -14,13 +20,18 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { ErrorCodeEnum } from '../util/errors.js';
 import { ensureOutputShape } from '../util/outputShape.js';
-import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
+import {
+  buildErrorResponse,
+  buildLiteralErrorResponse,
+  buildSuccessResponse,
+} from '../util/toolResponse.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
   audit,
   checkRateLimit,
   hashArgsSafely,
+  wrapUntrusted,
   LOCAL_RATE_LIMITED_MESSAGE,
 } from '../security/index.js';
 
@@ -97,9 +108,9 @@ export function registerListCategoriesTool(server: McpServer): void {
 
         const categories = page.results.map((c) => ({
           id: c.id,
-          description: c.description,
+          description: wrapUntrusted(c.description) as string,
           parentId: c.parentId,
-          parentDescription: c.parentDescription,
+          parentDescription: wrapUntrusted(c.parentDescription) ?? undefined,
         }));
 
         const total = page.total ?? categories.length;
@@ -120,17 +131,7 @@ export function registerListCategoriesTool(server: McpServer): void {
           categories,
         };
         ensureOutputShape(ListCategoriesOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              text: truncated
-                ? `Returned ${categories.length} of ${total} categories (truncated; pagination ships in a later PR).`
-                : `Returned ${categories.length} categories.`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
@@ -200,22 +201,14 @@ export function registerGetCategoryTool(server: McpServer): void {
         const c = await client.fetchCategory(categoryId);
         const category = {
           id: c.id,
-          description: c.description,
+          description: wrapUntrusted(c.description) as string,
           parentId: c.parentId,
-          parentDescription: c.parentDescription,
+          parentDescription: wrapUntrusted(c.parentDescription) ?? undefined,
         };
 
         const output = { ok: true as const, category };
         ensureOutputShape(GetCategoryOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              text: `Category ${c.id}: ${c.description}.`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(

@@ -47,7 +47,11 @@ import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum } from '../util/errors.js';
 import { ensureOutputShape } from '../util/outputShape.js';
-import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
+import {
+  buildErrorResponse,
+  buildLiteralErrorResponse,
+  buildSuccessResponse,
+} from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import {
   audit,
@@ -506,18 +510,7 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
 
         const output = { ok: true as const, identity };
         ensureOutputShape(IdentityOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              // Generic — every PII field is in `structuredContent`. The
-              // free-text channel deliberately stays minimal so transcripts
-              // don't accumulate identifying detail.
-              text: 'Returned identity record.',
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
@@ -620,12 +613,7 @@ export function registerGetIdentityTool(server: McpServer): void {
 
         const output = { ok: true as const, identity };
         ensureOutputShape(IdentityOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            { type: 'text' as const, text: 'Returned identity record.' },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(

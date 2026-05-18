@@ -27,7 +27,11 @@ import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum } from '../util/errors.js';
 import { ensureOutputShape } from '../util/outputShape.js';
-import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
+import {
+  buildErrorResponse,
+  buildLiteralErrorResponse,
+  buildSuccessResponse,
+} from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -420,17 +424,7 @@ export function registerListInvestmentsTool(server: McpServer): void {
           investments,
         };
         ensureOutputShape(ListInvestmentsOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              text: truncated
-                ? `Found ${investments.length} of ${total} investment(s) (truncated; pagination ships in a later PR).`
-                : `Found ${investments.length} investment(s).`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
@@ -507,12 +501,7 @@ export function registerGetInvestmentTool(server: McpServer): void {
 
         const output = { ok: true as const, investment };
         ensureOutputShape(GetInvestmentOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            { type: 'text' as const, text: 'Returned investment details.' },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
@@ -614,17 +603,7 @@ export function registerListInvestmentTransactionsTool(server: McpServer): void 
         ensureOutputShape(ListInvestmentTransactionsOutputSchema, output, {
           tool: toolName,
         });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              text: truncated
-                ? `Returned ${transactions.length} of ${total} movement(s) (truncated; pagination ships in a later PR).`
-                : `Returned ${transactions.length} movement(s).`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(

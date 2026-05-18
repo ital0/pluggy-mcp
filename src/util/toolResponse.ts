@@ -96,3 +96,79 @@ export function buildLiteralErrorResponse(
     content: [{ type: 'text', text: message }],
   };
 }
+
+/**
+ * Shape of an MCP tool response carrying a structured success envelope
+ * mirrored as JSON in the `content` text channel.
+ *
+ * The MCP SDK's `registerTool` callback signature allows additional
+ * fields on the returned object, so we mirror the same index signature
+ * used by `ToolErrorResponse`.
+ */
+interface ToolSuccessResponse<T extends { ok: true }> {
+  [x: string]: unknown;
+  structuredContent: T;
+  content: [{ type: 'text'; text: string }];
+}
+
+/**
+ * Build an MCP tool success response that mirrors `structuredContent`
+ * as a serialized-JSON `TextContent` block.
+ *
+ * Why: per the MCP spec (2025-06-18, "Structured Content"):
+ *   "For backwards compatibility, a tool that returns structured content
+ *    SHOULD also return the serialized JSON in a TextContent block."
+ *
+ * Many clients (notably claude.ai today) only surface `content[].text`
+ * to the model and ignore `structuredContent` entirely. Without the
+ * mirror, a multi-step workflow such as `getAccounts` →
+ * `listTransactions` is broken: the `accountId` lives in
+ * `structuredContent.accounts[].id` but never reaches the model, so the
+ * follow-up call cannot be constructed.
+ *
+ * Mirroring the validated `output` exactly keeps the invariant
+ * "text === JSON.stringify(structuredContent)" trivially true and
+ * impossible to drift. Existing `<untrusted>` markers wrapping
+ * institution-composed strings ride along inside the JSON values, so
+ * indirect prompt-injection posture is unchanged — the wire protocol
+ * was already sending `structuredContent` through the same transport,
+ * the LLM just couldn't see it.
+ */
+export function buildSuccessResponse<T extends { ok: true }>(
+  structured: T,
+): ToolSuccessResponse<T> {
+  // Runtime guard — the `T extends { ok: true }` constraint only fires at
+  // compile time; a caller could bypass it via `as any` (or via a refactor
+  // that loses the literal type) and end up returning a failure payload
+  // through the success channel WITHOUT `isError: true`. Banking MCP:
+  // belt-and-suspenders, fail loudly so the bug surfaces in tests instead
+  // of silently presenting an error payload as success to the LLM.
+  if ((structured as { ok: unknown }).ok !== true) {
+    throw new Error('buildSuccessResponse called with non-success envelope');
+  }
+
+  // JSON.stringify can throw on BigInt values, circular references, or a
+  // `toJSON` that itself throws. None of those shapes are reachable in
+  // the current codebase, but an SDK upgrade could introduce them. Tag
+  // the rethrow with `errorCode: 'INTERNAL'` so the outer
+  // `classifyAndReport` branch (see `errors.ts`) buckets this as
+  // INTERNAL rather than the much-less-actionable UNKNOWN — operators
+  // grep logs by errorCode.
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(structured);
+  } catch (err) {
+    const wrapped = new Error(
+      `buildSuccessResponse failed to serialize structured payload: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    (wrapped as Error & { errorCode?: string }).errorCode = 'INTERNAL';
+    throw wrapped;
+  }
+
+  return {
+    structuredContent: structured,
+    content: [{ type: 'text', text: serialized }],
+  };
+}

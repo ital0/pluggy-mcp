@@ -22,7 +22,11 @@ import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum } from '../util/errors.js';
 import { ensureOutputShape } from '../util/outputShape.js';
-import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
+import {
+  buildErrorResponse,
+  buildLiteralErrorResponse,
+  buildSuccessResponse,
+} from '../util/toolResponse.js';
 import { loadSecurityConfig } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -208,17 +212,7 @@ export function registerListBillsTool(server: McpServer): void {
           bills,
         };
         ensureOutputShape(ListBillsOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              text: truncated
-                ? `Found ${bills.length} of ${total} bill(s) (truncated; pagination ships in a later PR).`
-                : `Found ${bills.length} bill(s).`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
@@ -295,16 +289,7 @@ export function registerGetBillTool(server: McpServer): void {
 
         const output = { ok: true as const, bill };
         ensureOutputShape(GetBillOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              // Generic — id is already in `structuredContent.bill.id`.
-              text: 'Returned bill details.',
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(

@@ -18,7 +18,11 @@ import { getPluggyClient } from '../pluggy/client.js';
 import { toIsoIfDate } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 import { ensureOutputShape, ensureErrorEnvelope } from '../util/outputShape.js';
-import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
+import {
+  buildErrorResponse,
+  buildLiteralErrorResponse,
+  buildSuccessResponse,
+} from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import { performance } from 'node:perf_hooks';
@@ -255,20 +259,7 @@ export function registerGetAccountsTool(server: McpServer): void {
         };
         ensureOutputShape(GetAccountsOutputSchema, output, { tool: 'getAccounts' });
 
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              // Keep ids out of the free-text channel — `structuredContent`
-              // already echoes `itemId`. Other tools in this server do
-              // the same; stay consistent.
-              text: truncated
-                ? `Found ${accounts.length} of ${total} account(s) (truncated; pagination ships in a later PR).`
-                : `Found ${accounts.length} account(s).`,
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         // Defensive envelope validation lives inside buildErrorResponse:
@@ -431,19 +422,7 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
         ensureOutputShape(GetRawAccountDetailsOutputSchema, output, {
           tool: toolName,
         });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              // Generic text — the structured content carries the
-              // account id for the LLM. Avoid interpolating the id
-              // into the free-text channel where it'd show up in
-              // transcripts and conversation summaries.
-              text: 'Returned unmasked account details.',
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
@@ -581,17 +560,7 @@ export function registerGetAccountTool(server: McpServer): void {
 
         const output = { ok: true as const, account };
         ensureOutputShape(GetAccountOutputSchema, output, { tool: toolName });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              // Generic — keep the id out of the free-text channel; it
-              // is already in `structuredContent.account.id`.
-              text: 'Returned masked account details.',
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const r = buildErrorResponse(
@@ -710,20 +679,7 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
         ensureOutputShape(GetRealTimeBalanceOutputSchema, output, {
           tool: toolName,
         });
-        return {
-          structuredContent: output,
-          content: [
-            {
-              type: 'text' as const,
-              // Keep balance/currency out of the free-text channel — they
-              // leak into transcripts and conversation summaries. The
-              // structured channel still carries the full value for any
-              // tool that needs it. Consistent with other tools that keep
-              // ids and values out of the text line.
-              text: 'Real-time balance retrieved.',
-            },
-          ],
-        };
+        return buildSuccessResponse(output);
       } catch (err) {
         outcome = 'error';
         const safe = classifyAndReport(err, {
