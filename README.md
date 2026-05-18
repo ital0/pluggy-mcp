@@ -10,9 +10,9 @@
 - Wraps Pluggy's REST API as an MCP server over the **stdio** transport.
 - Exposes **24 read-only tools** spanning accounts, transactions, bills,
   investments, loans, identity, and Pluggy's premium intelligence APIs.
-- **PII redaction on by default** — CPF, full account numbers, owner names,
-  emails, phones, boleto digitable lines, and CNPJ are masked before any
-  data reaches the LLM context.
+- **PII redaction on by default** — CPF, full account numbers, card numbers,
+  owner names, emails, phones, boleto digitable lines, and CNPJ are masked
+  before any data reaches the LLM context.
 - **Per-tool rate limits** with conservative defaults (30/min, 200/day) so a
   runaway agent can't burn through your Pluggy quota.
 - **Structured audit log** to stderr (one JSON line per call); high-risk
@@ -82,7 +82,7 @@ You will normally not invoke the server directly — your MCP client
 | --- | --- | --- | --- | --- |
 | `PLUGGY_CLIENT_ID` | yes | — | Pluggy API client id. | Deleted from `process.env` after first read. |
 | `PLUGGY_CLIENT_SECRET` | yes | — | Pluggy API client secret. | Deleted from `process.env` after first read. Treat as a password. |
-| `PLUGGY_MCP_REDACT` | no | `true` | Mask PII (CPF, account numbers, owner names, emails, phones, boleto lines, CNPJ) before returning to the LLM. | Setting `false` logs a loud startup `WARN`. Raw values then reach the LLM context. |
+| `PLUGGY_MCP_REDACT` | no | `true` | Mask PII (CPF, account numbers, card numbers, owner names, emails, phones, boleto lines, CNPJ) before returning to the LLM. | Setting `false` logs a loud startup `WARN`. Raw values then reach the LLM context. |
 | `PLUGGY_MCP_AUDIT` | no | `true` | Emit one JSON audit line per tool call to stderr. | Setting `false` only suppresses **non-sensitive** lines. `sensitive: true` events are unbypassable. |
 | `PLUGGY_MCP_RATELIMIT` | no | `true` | Enforce in-memory per-tool rate limits. | Setting `false` removes the only local guard against agent loops blowing your Pluggy quota. |
 | `PLUGGY_MCP_RATELIMIT_PER_MIN` | no | `30` | Per-tool budget over a 60-second sliding window. | Non-positive or non-numeric falls back to the default and logs `config_invalid`. |

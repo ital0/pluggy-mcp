@@ -53,8 +53,8 @@ or in user-shared screenshots.
 
 **Defenses:**
 
-- PII fields (CPF, full account numbers, owner names, emails, phones,
-  boleto digitable lines, CNPJ) are **masked by default**
+- PII fields (CPF, full account numbers, card numbers, owner names,
+  emails, phones, boleto digitable lines, CNPJ) are **masked by default**
   (`src/security/redact.ts`).
 - Opting out via `PLUGGY_MCP_REDACT=false` is allowed but emits a loud
   startup `WARN` to stderr that names the disabled control.
