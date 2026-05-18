@@ -137,6 +137,18 @@ upstream round-trip): `getAccount`, `getRawAccountDetails`,
 `listBills`, `getBill`, `getInvestment`,
 `listInvestmentTransactions`, `getLoan`, `getIdentity`.
 
+> **Allowlist scope (read this).** `PLUGGY_ITEM_IDS` only gates tools
+> that take a raw `itemId`. Tools that take `accountId`,
+> `transactionId`, `consentId`, `investmentId`, `loanId`, `billId`, or
+> `identityId` reach the SDK without an allowlist check — and those ids
+> can be derived from a previously-allowed listing (`getAccounts`,
+> `listInvestments`, etc.). If a child id ends up in the LLM's context
+> from an earlier allowed call, subsequent calls using that id succeed
+> regardless of the allowlist. Treat the allowlist as **partial
+> containment**, not full authorization: it bounds *which items* a
+> session can ever enumerate, but not which child resources stay
+> reachable once an id leaks into context.
+
 The allowlist is **cached at process startup**. Changes require a server
 restart.
 
