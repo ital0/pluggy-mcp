@@ -18,6 +18,7 @@ import { getPluggyClient } from '../pluggy/client.js';
 import { toIsoIfDate } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
 import { ensureOutputShape, ensureErrorEnvelope } from '../util/outputShape.js';
+import { buildErrorResponse, buildLiteralErrorResponse } from '../util/toolResponse.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import { performance } from 'node:perf_hooks';
@@ -158,16 +159,7 @@ export function registerGetAccountsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         // Allowlist check BEFORE building the client — keeps the SDK call
@@ -176,16 +168,7 @@ export function registerGetAccountsTool(server: McpServer): void {
         if (!isItemAllowed(itemId)) {
           outcome = 'error';
           errorCode = 'FORBIDDEN';
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'FORBIDDEN' as const,
-            message: ITEM_NOT_ALLOWED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: ITEM_NOT_ALLOWED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('FORBIDDEN', ITEM_NOT_ALLOWED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -288,32 +271,18 @@ export function registerGetAccountsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: 'getAccounts',
-          operation: 'fetchAccounts',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        // Defensive: validate the error envelope against the tool's
-        // outputSchema before returning. If a future schema tightening
-        // makes this envelope invalid, the helper logs a WARN and
-        // returns a hardcoded fallback so the client never sees an
-        // MCP protocol-level rejection instead of a structured error.
-        const errorOutput = ensureErrorEnvelope(
+        // Defensive envelope validation lives inside buildErrorResponse:
+        // a future schema tightening that rejects the error envelope is
+        // logged + falls back to a hardcoded INTERNAL envelope, so the
+        // client never sees an MCP protocol-level rejection.
+        const r = buildErrorResponse(
+          err,
+          { tool: 'getAccounts', operation: 'fetchAccounts' },
           GetAccountsOutputSchema,
-          {
-            ok: false as const,
-            errorCode: safe.errorCode,
-            requestId: safe.requestId,
-            message: safe.message,
-          },
-          { tool: 'getAccounts' },
         );
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: 'getAccounts',
@@ -405,16 +374,7 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const { accountId } = args;
@@ -486,29 +446,14 @@ export function registerGetRawAccountDetailsTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchAccount',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        // See note on the `getAccounts` catch block above for the
-        // rationale behind `ensureErrorEnvelope`.
-        const errorOutput = ensureErrorEnvelope(
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchAccount' },
           GetRawAccountDetailsOutputSchema,
-          {
-            ok: false as const,
-            errorCode: safe.errorCode,
-            requestId: safe.requestId,
-            message: safe.message,
-          },
-          { tool: toolName },
         );
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -587,16 +532,7 @@ export function registerGetAccountTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
@@ -658,28 +594,14 @@ export function registerGetAccountTool(server: McpServer): void {
         };
       } catch (err) {
         outcome = 'error';
-        const safe = classifyAndReport(err, {
-          tool: toolName,
-          operation: 'fetchAccount',
-        });
-        errorCode = safe.errorCode;
-        requestId = safe.requestId;
-        // See note on the `getAccounts` catch block above.
-        const errorOutput = ensureErrorEnvelope(
+        const r = buildErrorResponse(
+          err,
+          { tool: toolName, operation: 'fetchAccount' },
           GetAccountOutputSchema,
-          {
-            ok: false as const,
-            errorCode: safe.errorCode,
-            requestId: safe.requestId,
-            message: safe.message,
-          },
-          { tool: toolName },
         );
-        return {
-          isError: true,
-          structuredContent: errorOutput,
-          content: [{ type: 'text' as const, text: safe.message }],
-        };
+        errorCode = r.errorCode;
+        requestId = r.requestId;
+        return r.result;
       } finally {
         audit({
           tool: toolName,
@@ -770,16 +692,7 @@ export function registerGetRealTimeBalanceTool(server: McpServer): void {
           outcome = 'error';
           errorCode = 'LOCAL_RATE_LIMITED';
           rateLimitReason = rl.reason;
-          const errorOutput = {
-            ok: false as const,
-            errorCode: 'LOCAL_RATE_LIMITED' as const,
-            message: LOCAL_RATE_LIMITED_MESSAGE,
-          };
-          return {
-            isError: true,
-            structuredContent: errorOutput,
-            content: [{ type: 'text' as const, text: LOCAL_RATE_LIMITED_MESSAGE }],
-          };
+          return buildLiteralErrorResponse('LOCAL_RATE_LIMITED', LOCAL_RATE_LIMITED_MESSAGE);
         }
 
         const client = getPluggyClient();
