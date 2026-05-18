@@ -103,6 +103,14 @@ read `process.env` to steal credentials.
 - A child process spawned **before** the first config read inherits the
   env. The server triggers the read early in `main()` so this window
   is short.
+- **Only credentials are scrubbed.** Security toggle vars
+  (`PLUGGY_MCP_REDACT`, `PLUGGY_MCP_AUDIT`, `PLUGGY_MCP_RATELIMIT`,
+  `PLUGGY_MCP_RATELIMIT_PER_MIN`, `PLUGGY_MCP_RATELIMIT_PER_DAY`,
+  `PLUGGY_MCP_DEBUG`, `PLUGGY_MCP_ENABLE_IDENTITY`, `PLUGGY_ITEM_IDS`)
+  remain in `process.env` after load — child processes spawned by the
+  server (or by a dependency) will see them. Toggles are not secrets,
+  but operators who rely on env-scrubbing for confidentiality should
+  not assume the whole environment is wiped.
 
 ## Security defaults
 
