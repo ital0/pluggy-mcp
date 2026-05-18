@@ -54,3 +54,56 @@ export function ensureOutputShape<T extends ZodTypeAny>(
     throw err;
   }
 }
+
+/**
+ * Validate an error envelope against the tool's declared outputSchema,
+ * falling back to a hardcoded minimal envelope on mismatch.
+ *
+ * Why: `ensureOutputShape` is called on the success path so a shape drift
+ * surfaces as a stable error envelope. The error envelope itself is
+ * built from the `SafeError` returned by `classifyAndReport` plus
+ * `ok: false`, and a future regression in the declared `outputSchema`
+ * (e.g. tightening `message` to a `z.enum`) could make the envelope
+ * fail validation too. Without this defense the MCP SDK would reject
+ * the envelope post-handler and the LLM would see an `MCP error -32602`
+ * instead of a structured failure.
+ *
+ * If the supplied envelope fails validation we:
+ *  - emit a stderr WARN line so an operator notices the drift,
+ *  - return a hardcoded `INTERNAL` envelope built only from literal
+ *    values that the success-path schema is guaranteed to accept.
+ *
+ * The fallback envelope is INTENTIONALLY simple (no re-validation) to
+ * avoid recursion: if a future change to the success schema also
+ * rejects this hardcoded shape, the SDK will surface its own protocol
+ * error — preferable to a stack overflow.
+ */
+export function ensureErrorEnvelope<T extends ZodTypeAny>(
+  schema: T,
+  envelope: { ok: false; errorCode: string; message: string; requestId?: string },
+  context: { tool: string },
+): { ok: false; errorCode: string; message: string; requestId?: string } {
+  const result = schema.safeParse(envelope);
+  if (result.success) return envelope;
+  // Diagnostic stderr line — never on stdout (stdio JSON-RPC channel).
+  // Keep the schema-issue summary out of the LLM-facing path; it stays
+  // here for the operator.
+  const issues = result.error.issues
+    .map((i) => `${i.path.join('.')}: ${i.message}`)
+    .join('; ');
+  console.error(
+    JSON.stringify({
+      level: 'warn',
+      tool: context.tool,
+      event: 'error_envelope_shape_mismatch',
+      issues,
+    }),
+  );
+  return {
+    ok: false,
+    errorCode: 'INTERNAL',
+    message:
+      'Internal envelope shape mismatch — server failed to build a valid error response.',
+    requestId: envelope.requestId,
+  };
+}
