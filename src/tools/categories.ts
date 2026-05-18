@@ -3,9 +3,15 @@
  *
  * Categories are the canonical taxonomy Pluggy assigns to transactions
  * (`categoryId` on a Transaction maps to one of these). They are global
- * (not per-item), entirely public, contain no PII, and the descriptions
- * are short Pluggy-controlled enum-like strings — so no `<untrusted>`
- * wrapping and no redaction.
+ * (not per-item), entirely public, and contain no PII — so no redaction.
+ *
+ * The `description` / `parentDescription` strings are short Pluggy-
+ * controlled enum-like labels, but we still wrap them in `<untrusted>`
+ * as defense-in-depth: now that the MCP success response mirrors
+ * `structuredContent` into the LLM-facing text channel
+ * (`util/toolResponse.ts`), the cost of wrapping a vendor-controlled
+ * string is trivial and matches what every other tool does for fields
+ * like `marketingName` or connector `name`.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -27,6 +33,7 @@ import {
   hashArgsSafely,
   LOCAL_RATE_LIMITED_MESSAGE,
 } from '../security/index.js';
+import { wrapUntrusted } from '../security/untrusted.js';
 
 const CategorySchema = z.object({
   id: z.string().describe('Pluggy category id'),
@@ -101,9 +108,9 @@ export function registerListCategoriesTool(server: McpServer): void {
 
         const categories = page.results.map((c) => ({
           id: c.id,
-          description: c.description,
+          description: wrapUntrusted(c.description) as string,
           parentId: c.parentId,
-          parentDescription: c.parentDescription,
+          parentDescription: wrapUntrusted(c.parentDescription) ?? undefined,
         }));
 
         const total = page.total ?? categories.length;
@@ -194,9 +201,9 @@ export function registerGetCategoryTool(server: McpServer): void {
         const c = await client.fetchCategory(categoryId);
         const category = {
           id: c.id,
-          description: c.description,
+          description: wrapUntrusted(c.description) as string,
           parentId: c.parentId,
-          parentDescription: c.parentDescription,
+          parentDescription: wrapUntrusted(c.parentDescription) ?? undefined,
         };
 
         const output = { ok: true as const, category };
