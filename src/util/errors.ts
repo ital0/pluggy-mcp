@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { MissingCredentialsError } from '../pluggy/client.js';
+import { OUTPUT_SCHEMA_MISMATCH_CODE } from '../security/audit.js';
 
 /**
  * Stable enum the LLM can pattern-match on. The values double as
@@ -34,6 +35,7 @@ export const ErrorCodeEnum = z.enum([
   'LOCAL_RATE_LIMITED',
   'UPSTREAM_5XX',
   'NETWORK',
+  'INTERNAL',
   'UNKNOWN',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCodeEnum>;
@@ -181,7 +183,35 @@ export function classifyAndReport(
     };
   }
 
-  // 2) Map HTTP / network errors to a stable enum.
+  // 2) Internal shape-drift: a tool's success payload failed its own
+  //    outputSchema. The thrown Error carries a sentinel `code` so we can
+  //    distinguish it from upstream Pluggy errors here. Hardcoded
+  //    user-facing message — never interpolate the Zod issue list, that
+  //    text is for the operator's stderr log only.
+  const internalCode = (err as { code?: unknown } | null | undefined)?.code;
+  if (internalCode === OUTPUT_SCHEMA_MISMATCH_CODE) {
+    const message =
+      'Internal schema mismatch — server output did not match its declared shape. Please open an issue.';
+    const errAsAny = err as { name?: unknown; message?: unknown };
+    console.error(
+      JSON.stringify({
+        ts,
+        tool: ctx.tool,
+        operation: ctx.operation ?? null,
+        requestId,
+        errorCode: 'INTERNAL',
+        name: typeof errAsAny?.name === 'string' ? errAsAny.name : null,
+        msg: typeof errAsAny?.message === 'string' ? errAsAny.message : null,
+      }),
+    );
+    return {
+      errorCode: 'INTERNAL',
+      requestId,
+      message: `${message} request-id=${requestId}`,
+    };
+  }
+
+  // 3) Map HTTP / network errors to a stable enum.
   const { status, code } = extractStatus(err);
   let errorCode: ErrorCode = 'UNKNOWN';
   let message = 'Unexpected error talking to Pluggy. See server logs.';
@@ -206,7 +236,7 @@ export function classifyAndReport(
     message = 'Network error talking to Pluggy. Retry shortly.';
   }
 
-  // 3) Structured single-line stderr log. We deliberately do NOT include
+  // 4) Structured single-line stderr log. We deliberately do NOT include
   //    the response body or the stack: those are the channels through
   //    which secrets / customer data leak. The error name + message are
   //    enough to triage, and PLUGGY_MCP_DEBUG=1 unlocks the rest.
