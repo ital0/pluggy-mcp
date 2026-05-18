@@ -236,6 +236,11 @@ export function classifyAndReport(
         operation: ctx.operation ?? null,
         requestId,
         errorCode: 'INTERNAL',
+        // Keep `status` and `code` keys present (as null) so downstream
+        // grep/jq pipelines see a uniform log-line shape across the
+        // INTERNAL branch and the main classifier branch below.
+        status: null,
+        code: null,
         name: typeof errAsAny?.name === 'string' ? errAsAny.name : null,
         msg: typeof errAsAny?.message === 'string' ? errAsAny.message : null,
       }),
