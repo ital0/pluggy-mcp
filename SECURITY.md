@@ -131,6 +131,12 @@ read `process.env` to steal credentials.
   Pluggy SDK's responsibility; we do not pin certificates.
 - **Side channels in the LLM transcript.** Once data is in the model's
   context window, the host application controls where it goes next.
+- **Write access to the process working directory.** A `.env` file in the
+  server's CWD is loaded at startup (via `dotenv/config` in
+  `src/config.ts`) and can set `PLUGGY_MCP_REDACT=false`,
+  `PLUGGY_MCP_ENABLE_IDENTITY=true`, or any other toggle the MCP client
+  did not already pass in `process.env`. Keep the working directory
+  trusted; do not run `pluggy-mcp` out of a world-writable folder.
 
 ## What to do if you suspect compromise
 

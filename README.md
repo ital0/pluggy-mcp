@@ -98,6 +98,15 @@ You will normally not invoke the server directly — your MCP client
 
 A working `.env.example` is included in the [GitHub repository](https://github.com/pluggyai/pluggy-mcp/blob/main/.env.example) (not shipped via npm).
 
+> **Note:** the server also loads a `.env` file from the **current working
+> directory** at startup (via `dotenv/config` in `src/config.ts`). `dotenv`
+> only fills variables that are not already present in `process.env`, so an
+> env value passed by your MCP client wins over the `.env` file. Anyone who
+> can write a `.env` next to the server's CWD can therefore flip
+> `PLUGGY_MCP_REDACT=false`, `PLUGGY_MCP_ENABLE_IDENTITY=true`, etc., for
+> any toggle the client didn't already set — keep the working directory
+> trusted.
+
 ### Items allowlist (`PLUGGY_ITEM_IDS`)
 
 `PLUGGY_ITEM_IDS` is an optional, comma-separated list of Pluggy Item UUIDs
