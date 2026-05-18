@@ -32,10 +32,16 @@
 MCP client (Cursor / Claude Desktop / Codex CLI)
         │  stdio JSON-RPC
         ▼
-   pluggy-mcp  ──▶  redact → wrap <untrusted> → rate-limit → audit
+   pluggy-mcp
         │
         ▼
-   Pluggy SDK  ──▶  Pluggy REST API  ──▶  Open Finance / institution data
+   rate-limit  ──▶  allowlist  ──▶  Pluggy SDK / rawFetch  ──▶  Pluggy REST API
+                       (gated tools)         │                     │
+                                             ▼                     ▼
+                              redact → wrap <untrusted>      Open Finance /
+                                             │              institution data
+                                             ▼
+                                  audit (emitted in `finally`)
 ```
 
 ## Quick start
