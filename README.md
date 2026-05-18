@@ -225,8 +225,8 @@ raw available behind explicit opt-in).
 
 | Tool | Input | Returns | PII | Notes |
 | --- | --- | --- | --- | --- |
-| `listConnectors` | optional filters | All available institutions (banks, brokers, etc.) and their products / health. | none | Free-text names wrapped in `<untrusted>`. |
-| `getConnector` | `id` (number) | Single connector by id. | none | Same wrapping. |
+| `listConnectors` | — | All available institutions (banks, brokers, etc.) and their products / health. | none | Free-text names wrapped in `<untrusted>`. |
+| `getConnector` | `connectorId` (number) | Single connector by id. | none | Same wrapping. |
 
 ### Items and consents
 
@@ -257,7 +257,7 @@ raw available behind explicit opt-in).
 | Tool | Input | Returns | PII | Notes |
 | --- | --- | --- | --- | --- |
 | `listCategories` | — | Pluggy's global category taxonomy. | none | Resolves `categoryId` values on transactions. |
-| `getCategory` | `id` | One category by id. | none | — |
+| `getCategory` | `categoryId` (string) | One category by id. | none | — |
 
 ### Credit-card bills
 
