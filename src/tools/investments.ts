@@ -31,6 +31,7 @@ import { logEvent } from '../util/log.js';
 import {
   audit,
   checkRateLimit,
+  ensureOutputShape,
   hashArgsSafely,
   hashForAudit,
   redactOwnerName,
@@ -330,6 +331,12 @@ const ListInvestmentTransactionsOutputShape = {
   message: z.string().optional(),
 };
 
+// Validator mirrors — see transactions.ts for rationale.
+const ListInvestmentsOutputSchema = z.object(ListInvestmentsOutputShape);
+const ListInvestmentTransactionsOutputSchema = z.object(
+  ListInvestmentTransactionsOutputShape,
+);
+
 // ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
@@ -431,6 +438,7 @@ export function registerListInvestmentsTool(server: McpServer): void {
           truncated,
           investments,
         };
+        ensureOutputShape(ListInvestmentsOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -657,6 +665,9 @@ export function registerListInvestmentTransactionsTool(server: McpServer): void 
           truncated,
           transactions,
         };
+        ensureOutputShape(ListInvestmentTransactionsOutputSchema, output, {
+          tool: toolName,
+        });
         return {
           structuredContent: output,
           content: [

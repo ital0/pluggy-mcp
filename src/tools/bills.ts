@@ -26,6 +26,7 @@ import { logEvent } from '../util/log.js';
 import {
   audit,
   checkRateLimit,
+  ensureOutputShape,
   hashArgsSafely,
   hashForAudit,
   wrapUntrusted,
@@ -132,6 +133,9 @@ const GetBillOutputShape = {
   message: z.string().optional(),
 };
 
+// Validator mirror — see transactions.ts for rationale.
+const ListBillsOutputSchema = z.object(ListBillsOutputShape);
+
 export function registerListBillsTool(server: McpServer): void {
   const toolName = 'listBills';
   server.registerTool(
@@ -213,6 +217,7 @@ export function registerListBillsTool(server: McpServer): void {
           truncated,
           bills,
         };
+        ensureOutputShape(ListBillsOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [

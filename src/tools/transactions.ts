@@ -29,6 +29,7 @@ import { logEvent } from '../util/log.js';
 import {
   audit,
   checkRateLimit,
+  ensureOutputShape,
   hashArgsSafely,
   hashForAudit,
   redactAccountNumber,
@@ -170,6 +171,12 @@ const GetTransactionOutputShape = {
   requestId: z.string().optional(),
   message: z.string().optional(),
 };
+
+// Validator mirror of the list output shape — passed to `ensureOutputShape`
+// so a shape drift in the success payload is caught BEFORE the MCP SDK's
+// own outputSchema check, which would otherwise reject the envelope after
+// the handler exited (leaving the audit line stuck at outcome=success).
+const ListTransactionsOutputSchema = z.object(ListTransactionsOutputShape);
 
 /**
  * Mask a payer/receiver participant. Document number is CPF (11 digits)
@@ -532,6 +539,7 @@ export function registerListTransactionsTool(server: McpServer): void {
           truncated,
           transactions,
         };
+        ensureOutputShape(ListTransactionsOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [

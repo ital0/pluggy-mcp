@@ -25,6 +25,7 @@ import { logEvent } from '../util/log.js';
 import {
   audit,
   checkRateLimit,
+  ensureOutputShape,
   hashArgsSafely,
   hashForAudit,
   LOCAL_RATE_LIMITED_MESSAGE,
@@ -65,6 +66,9 @@ const GetConsentOutputShape = {
   requestId: z.string().optional(),
   message: z.string().optional(),
 };
+
+// Validator mirror — see transactions.ts for rationale.
+const ListConsentsOutputSchema = z.object(ListConsentsOutputShape);
 
 export function registerListConsentsTool(server: McpServer): void {
   const toolName = 'listConsents';
@@ -168,6 +172,7 @@ export function registerListConsentsTool(server: McpServer): void {
           truncated,
           consents,
         };
+        ensureOutputShape(ListConsentsOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
