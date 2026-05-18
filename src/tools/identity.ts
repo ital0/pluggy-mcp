@@ -46,6 +46,7 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import {
   audit,
@@ -413,6 +414,10 @@ const IdentityOutputShape = {
   message: z.string().optional(),
 };
 
+// Validator mirror — see `transactions.ts` for rationale. Shared by both
+// identity tools (they expose the same envelope shape).
+const IdentityOutputSchema = z.object(IdentityOutputShape);
+
 export function registerGetIdentityByItemTool(server: McpServer): void {
   const toolName = 'getIdentityByItem';
   server.registerTool(
@@ -528,6 +533,7 @@ export function registerGetIdentityByItemTool(server: McpServer): void {
         }
 
         const output = { ok: true as const, identity };
+        ensureOutputShape(IdentityOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -668,6 +674,7 @@ export function registerGetIdentityTool(server: McpServer): void {
         }
 
         const output = { ok: true as const, identity };
+        ensureOutputShape(IdentityOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [

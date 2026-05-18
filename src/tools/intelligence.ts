@@ -34,6 +34,7 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import { pluggyRawFetch } from '../pluggy/rawFetch.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import {
   audit,
@@ -85,6 +86,9 @@ const GetRecurringPaymentsOutputShape = {
   requestId: z.string().optional(),
   message: z.string().optional(),
 };
+
+// Validator mirror — see `transactions.ts` for rationale.
+const GetRecurringPaymentsOutputSchema = z.object(GetRecurringPaymentsOutputShape);
 
 /**
  * Hardcoded recursion ceiling for the two response normalizers below.
@@ -220,6 +224,9 @@ export function registerGetRecurringPaymentsTool(server: McpServer): void {
         const result = normalizeUnknownPayload(raw);
 
         const output = { ok: true as const, itemId, result };
+        ensureOutputShape(GetRecurringPaymentsOutputSchema, output, {
+          tool: toolName,
+        });
         return {
           structuredContent: output,
           content: [
@@ -280,6 +287,9 @@ const GetInsightsBookOutputShape = {
   requestId: z.string().optional(),
   message: z.string().optional(),
 };
+
+// Validator mirror — see `transactions.ts` for rationale.
+const GetInsightsBookOutputSchema = z.object(GetInsightsBookOutputShape);
 
 /**
  * Hardcoded ceiling on the number of itemIds accepted per call. The
@@ -413,6 +423,7 @@ export function registerGetInsightsBookTool(server: McpServer): void {
         const result = normalizeUnknownPayload(raw);
 
         const output = { ok: true as const, itemIds, result };
+        ensureOutputShape(GetInsightsBookOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [

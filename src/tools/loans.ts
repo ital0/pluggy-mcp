@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { getPluggyClient } from '../pluggy/client.js';
 import { dateToIso } from '../util/date.js';
 import { ErrorCodeEnum, classifyAndReport } from '../util/errors.js';
+import { ensureOutputShape } from '../util/outputShape.js';
 import { loadSecurityConfig, isItemAllowed } from '../config.js';
 import { logEvent } from '../util/log.js';
 import {
@@ -413,6 +414,10 @@ const GetLoanOutputShape = {
   message: z.string().optional(),
 };
 
+// Validator mirrors — see `transactions.ts` for rationale.
+const ListLoansOutputSchema = z.object(ListLoansOutputShape);
+const GetLoanOutputSchema = z.object(GetLoanOutputShape);
+
 export function registerListLoansTool(server: McpServer): void {
   const toolName = 'listLoans';
   server.registerTool(
@@ -507,6 +512,7 @@ export function registerListLoansTool(server: McpServer): void {
           truncated,
           loans,
         };
+        ensureOutputShape(ListLoansOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
@@ -611,6 +617,7 @@ export function registerGetLoanTool(server: McpServer): void {
         const loan = mapLoan(l as unknown as LoanLike);
 
         const output = { ok: true as const, loan };
+        ensureOutputShape(GetLoanOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [{ type: 'text' as const, text: 'Returned loan details.' }],

@@ -336,6 +336,7 @@ const ListInvestmentTransactionsOutputShape = {
 
 // Validator mirrors — see transactions.ts for rationale.
 const ListInvestmentsOutputSchema = z.object(ListInvestmentsOutputShape);
+const GetInvestmentOutputSchema = z.object(GetInvestmentOutputShape);
 const ListInvestmentTransactionsOutputSchema = z.object(
   ListInvestmentTransactionsOutputShape,
 );
@@ -546,6 +547,7 @@ export function registerGetInvestmentTool(server: McpServer): void {
         const investment = mapInvestment(i as unknown as InvestmentLike, sec.redact);
 
         const output = { ok: true as const, investment };
+        ensureOutputShape(GetInvestmentOutputSchema, output, { tool: toolName });
         return {
           structuredContent: output,
           content: [
